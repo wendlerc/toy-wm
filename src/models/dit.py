@@ -10,6 +10,8 @@ from jaxtyping import Float, Bool, Int
 from torch import Tensor
 from typing import Optional
 
+import matplotlib.pyplot as plt
+
 class CausalBlock(nn.Module):
     def __init__(self, d_model, expansion, n_heads):
         super().__init__()
@@ -115,9 +117,7 @@ class CausalDit(nn.Module):
         clean = self.time_emb(t.zeros((ts.shape[0], ts.shape[1]-1), dtype=ts.dtype, device=ts.device))
         for block in self.blocks:
             zr, xa = block(zr, xa, cond, clean, mask_cross, mask_self)
-        print(zr.shape)
         zr = zr.reshape(batch, durzr, seqzr, d)
-        print(zr.shape)
         out = self.unpatch(zr[:, :, :-self.n_registers])
         return out # batch dur channels height width
     
@@ -136,25 +136,30 @@ class CausalDit(nn.Module):
 
         # zr: Float[Tensor, "batch dur seqzr d"], 
         # xa: Float[Tensor, "batch dur seqxa d"], 
-        m_left = t.eye(zr.shape[1], dtype=bool)
-        tmp = t.ones((zr.shape[1], zr.shape[1]), dtype=bool)
-        m_right = t.tril(tmp, -1) ^ t.tril(tmp, -1 - self.n_window)
+        m_left = t.eye(zr.shape[1], dtype=t.int8)
+        tmp = t.ones((zr.shape[1], zr.shape[1]), dtype=t.int8)
+        m_right = t.tril(tmp, -1) - t.tril(tmp, -1 - self.n_window)
         m_right = m_right[:, :-1]
 
         # blow them up to dur_seq and durkv_seqkv size
-        m_left = t.kron(m_left, t.ones((zr.shape[2], zr.shape[2]), dtype=bool))
-        m_right = t.kron(m_right, t.ones((zr.shape[2], xa.shape[2]), dtype=bool))
-
-        m_self = t.tril(t.ones((xa.shape[1], xa.shape[1]), dtype=bool))
-        m_self = t.kron(m_self, t.ones((xa.shape[2],xa.shape[2]), dtype=bool))
-        return ~t.cat((m_left, m_right), dim=1), ~m_self # we want to mask out the ones
+        m_left = t.kron(m_left, t.ones((zr.shape[2], zr.shape[2]), dtype=t.int8))
+        m_right = t.kron(m_right, t.ones((zr.shape[2], xa.shape[2]), dtype=t.int8))
+        print(zr.shape, xa.shape)
+        m_self = t.tril(t.ones((xa.shape[1], xa.shape[1]), dtype=t.int8))
+        m_self = t.kron(m_self, t.ones((xa.shape[2],xa.shape[2]), dtype=t.int8))
+        m_cross = t.cat((m_left, m_right), dim=1)
+        plt.imshow(m_cross.numpy())
+        plt.show()
+        plt.imshow(m_self.numpy())
+        plt.show()
+        return ~m_cross, ~m_self # we want to mask out the ones
 
 
 
 if __name__ == "__main__":
-    dit = CausalDit(10, 12, 3, 64, 5, n_blocks=2)
-    frames = t.rand((2, 30*5-1, 3, 10, 12))
-    z = t.rand((2, 30*5, 3, 10, 12))
-    actions = t.randint(3, (2, 30*5))
-    ts = t.randint(5, (2, 30*5))
+    dit = CausalDit(20, 20, 3, 64, 5, n_blocks=2)
+    frames = t.rand((2, 6-1, 3, 20, 20))
+    z = t.rand((2, 6, 3, 20, 20))
+    actions = t.randint(3, (2, 6))
+    ts = t.randint(5, (2, 6))
     out = dit(z, frames, actions, ts)
