@@ -1,0 +1,18 @@
+[project]
+name = "toy-wm"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "einops>=0.8.1",
+    "ipykernel>=7.1.0",
+    "jaxtyping>=0.3.3",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+    "omegaconf>=2.3.0",
+    "pip>=25.3",
+    "pyyaml>=6.0.3",
+    "torch>=2.9.0",
+    "tqdm>=4.67.1",
+]
