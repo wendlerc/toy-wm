@@ -102,9 +102,10 @@ def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay
         ts = F.sigmoid(t.randn(frames.shape[0], 1, device=device, dtype=dtype))
         x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
         vel_pred = model(x_t, x0[:,:-1], actions, ts)
-        loss = F.mse_loss(vel_pred, vel_true)
+        loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
         wandb.log({"loss": loss.item()})
         loss.backward()
+        t.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         pbar.set_postfix(loss=loss.item())
         if step % 100 == 0:

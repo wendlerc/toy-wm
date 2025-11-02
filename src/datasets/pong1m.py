@@ -21,4 +21,5 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True):
     actions = actions.reshape(-1, fps*duration)
     dataset = TensorDataset(frames, actions)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+    print(f"{frames.shape[0]//batch_size} batches")
     return loader, mean, std
