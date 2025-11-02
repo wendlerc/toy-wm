@@ -24,6 +24,7 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False):
     if debug:
         frames = 0*frames + firstf[None]
         actions = 0*actions + firsta[None]
+        frames = 0*frames + frames[:,0].unsqueeze(1)
     dataset = TensorDataset(frames, actions)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     print(f"{frames.shape[0]//batch_size} batches")

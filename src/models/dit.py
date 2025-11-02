@@ -3,7 +3,7 @@ from torch import nn
 
 from ..nn.attn import Attention
 from ..nn.modulation import AdaLN, Gate
-from ..nn.patch import Patch, UnPatch
+from ..nn.patch import Patch, UnPatch, UnPatchCond
 from ..nn.geglu import GEGLU
 
 from jaxtyping import Float, Bool, Int
@@ -105,7 +105,7 @@ class CausalBlock(nn.Module):
 class CausalDit(nn.Module):
     def __init__(self, height, width, n_window, d_model, T, 
                        patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
-                       n_registers=1, n_actions=3, nctx=20000, debug=False):
+                       n_registers=1, n_actions=3, nctx=20000, debug=False, legacy=False):
         super().__init__()
         self.height = height
         self.width = width
@@ -117,10 +117,14 @@ class CausalDit(nn.Module):
         self.T = T
         self.patch_size = patch_size
         self.debug = debug
+        self.legacy = legacy
         self.frame_rope = FrameRoPE(d_model//n_heads, nctx, height//patch_size*width//patch_size + n_registers)
         self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.frame_rope) for _ in range(n_blocks)])
         self.patch = Patch(out_channels=d_model, patch_size=patch_size)
-        self.unpatch = UnPatch(height, width, in_channels=d_model, patch_size=patch_size)
+        if self.legacy:
+            self.unpatch = UnPatch(height, width, in_channels=d_model, patch_size=patch_size)
+        else:
+            self.unpatch = UnPatchCond(height, width, in_channels=d_model, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
         self.pe_grid = nn.Parameter(t.randn(height//patch_size*width//patch_size, d_model) * 1/d_model**0.5)
@@ -179,7 +183,10 @@ class CausalDit(nn.Module):
         for block in self.blocks:
             zr, xa = block(zr, xa, cond, clean, mask_cross, mask_self)
         zr = zr.reshape(batch, durzr, seqzr, d)
-        out = self.unpatch(zr[:, :, :-self.n_registers])
+        if self.legacy:
+            out = self.unpatch(zr[:, :, :-self.n_registers])
+        else:
+            out = self.unpatch(zr[:, :, :-self.n_registers], cond)
         return out # batch dur channels height width
     
     def causal_mask(self, zr, xa):

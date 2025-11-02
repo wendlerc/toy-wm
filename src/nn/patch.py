@@ -1,4 +1,6 @@
 from torch import nn
+from .modulation import AdaLN
+
 
 class Patch(nn.Module):
     def __init__(self, in_channels=3, out_channels=64, patch_size=2):
@@ -32,12 +34,38 @@ class UnPatch(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.unpatch = nn.Linear(in_channels, out_channels*patch_size**2)
-        nn.init.kaiming_normal_(self.unpatch.weight)
         nn.init.normal_(self.unpatch.weight, mean=0.0, std=1/in_channels) # smaller init to cap the loss at the beginning
-        nn.init.zeros_(self.unpatch.weight)   
         nn.init.constant_(self.unpatch.bias, 0.0)
 
     def forward(self, x):
+        x = self.unpatch(x)
+        batch, dur, seq, d = x.shape
+        x = x.reshape(batch, dur, seq*self.patch_size**2, self.out_channels)
+        x = x.permute(0, 1, 3, 2)
+        x = x.reshape(batch, dur, self.out_channels, self.height, self.width)
+        return x
+
+
+
+class UnPatchCond(nn.Module):
+    def __init__(self, height, width, in_channels=64, out_channels=3, patch_size=2):
+        super().__init__()
+        self.width = width
+        self.height = height
+        self.patch_size = patch_size
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.norm = AdaLN(in_channels)
+        self.act = nn.SiLU()
+        self.unpatch = nn.Linear(in_channels, out_channels*patch_size**2)
+
+
+    def forward(self, x, cond):
+        batch, dur, seq, din = x.shape
+        x = x.reshape(batch, -1, din)
+        x = self.norm(x, cond)
+        x = x.reshape(batch, dur, seq, din)
+        x = self.act(x)
         x = self.unpatch(x)
         batch, dur, seq, d = x.shape
         x = x.reshape(batch, dur, seq*self.patch_size**2, self.out_channels)
