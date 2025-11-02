@@ -17,7 +17,7 @@ if __name__ == "__main__":
         device = t.device("cpu")
         print("Using device: CPU")
 
-    loader = get_loader(duration=1, fps=6)
+    loader, _, _ = get_loader(duration=1, fps=6)
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
     model = get_model(height, width, patch_size=4, d_model=32)
