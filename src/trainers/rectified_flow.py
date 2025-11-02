@@ -99,7 +99,7 @@ def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay
         z = t.randn_like(frames, device=device, dtype=dtype)
         x0 = frames
         vel_true = x0 - z
-        ts = F.sigmoid(t.randn(frames.shape[0], 1, device=device, dtype=dtype))
+        ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
         x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
         vel_pred = model(x_t, x0[:,:-1], actions, ts)
         loss = F.mse_loss(vel_pred, vel_true, reduction="mean")

@@ -3,7 +3,7 @@ from torch import nn
 
 from ..nn.attn import Attention
 from ..nn.modulation import AdaLN, Gate
-from ..nn.patch import Patch, UnPatch, UnPatchCond
+from ..nn.patch import Patch, UnPatch, PatchCond, UnPatchCond
 from ..nn.geglu import GEGLU
 from ..nn.pe import FrameRoPE, NumericEncoding
 from jaxtyping import Float, Bool, Int
@@ -73,10 +73,11 @@ class CausalDit(nn.Module):
         self.legacy = legacy
         self.frame_rope = FrameRoPE(d_model//n_heads, nctx, height//patch_size*width//patch_size + n_registers)
         self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.frame_rope) for _ in range(n_blocks)])
-        self.patch = Patch(out_channels=d_model, patch_size=patch_size)
         if self.legacy:
+            self.patch = Patch(out_channels=d_model, patch_size=patch_size)
             self.unpatch = UnPatch(height, width, in_channels=d_model, patch_size=patch_size)
         else:
+            self.patch = PatchCond(out_channels=d_model, patch_size=patch_size)
             self.unpatch = UnPatchCond(height, width, in_channels=d_model, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
@@ -114,16 +115,28 @@ class CausalDit(nn.Module):
         # (Id3 | downshifted by 1 autoregressive mask)
         # incorporating actions by adding them to the frames
         # z1, z2, z3, f1a1, f2a2
-        
-        z = self.patch(z) # batch dur seq d
-        z += self.pe_grid[None, None]
-        #print(z.shape, self.pe_frames.shape)
-        #z += self.pe_frames[None, :, None] # this does not work with absolute
-        x = self.patch(frames) # batch dur seq d
-        x += self.pe_grid[None, None]
-        # x += self.pe_frames[None, :, None]
+        if ts.shape[1] == 1:
+            ts = ts.repeat(1, z.shape[1])
+
         a = self.action_emb(actions) # batch dur d
-        # a += self.pe_frames[None]
+        cond = self.time_emb((ts * self.T).long()) 
+        if self.legacy:
+            cond += a
+        else:
+            cond[:, 1:] += a[:, :-1]
+        clean = self.time_emb(t.zeros((ts.shape[0], ts.shape[1]-1), dtype=t.long, device=ts.device)) + a[:, :-1]
+
+        if self.legacy:
+            z = self.patch(z) # batch dur seq d
+        else:
+            z = self.patch(z, cond)
+        z += self.pe_grid[None, None]
+        if self.legacy:
+            x = self.patch(frames) # batch dur seq d
+        else:
+            x = self.patch(frames, clean)
+        x += self.pe_grid[None, None]
+
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
         xa = t.cat((x, self.registers[None, None].repeat([x.shape[0], x.shape[1], 1, 1])), dim=2)
@@ -132,10 +145,7 @@ class CausalDit(nn.Module):
         batch, durxa, seqxa, d = xa.shape
         zr = zr.reshape(batch, -1, d) # batch durseq d
         xa = xa.reshape(batch, -1, d)
-        if ts.shape[1] == 1:
-            ts = ts.repeat(1, z.shape[1])
-        cond = self.time_emb((ts * self.T).long()) + a
-        clean = self.time_emb(t.zeros((ts.shape[0], ts.shape[1]-1), dtype=t.long, device=ts.device)) + a[:, :-1]
+        
         for block in self.blocks:
             zr, xa = block(zr, xa, cond, clean, mask_cross, mask_self)
         zr = zr.reshape(batch, durzr, seqzr, d)

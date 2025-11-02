@@ -46,6 +46,37 @@ class UnPatch(nn.Module):
         return x
 
 
+class PatchCond(nn.Module):
+    def __init__(self, in_channels=3, out_channels=64, patch_size=2):
+        super().__init__()
+        self.patch_size = patch_size
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=patch_size, stride=patch_size, padding=0)
+        self.flatten = nn.Flatten(start_dim=3)
+        self.norm = AdaLN(out_channels)
+        self.act = nn.SiLU()
+        self.mix = nn.Linear(out_channels, out_channels)
+    
+    def forward(self, x, cond):
+        assert x.shape[-1] % self.patch_size == 0 and x.shape[-2] % self.patch_size == 0, f"shape not compatible with patching, both dims need to be divisible by patch_size {self.patch_size}"
+        # input: (batch, time, channels, height, width)
+        batch, dur, c, h, w = x.shape
+        x = x.reshape(-1, c, h, w)
+        x = self.conv(x) 
+        x = x.reshape(batch, dur, self.out_channels, h//self.patch_size, w//self.patch_size)
+        # output: (batch, time, channels, height/patch_size, width/patch_size)
+        x = self.flatten(x)
+        # output: (batch, time, channels, (height/patch_size) * (width/patch_size))
+        x = x.permute(0, 1, 3, 2)
+        # output: (batch, time, (height/patch_size) * (width/patch_size), channels)
+        batch, dur, seq, d = x.shape
+        x = x.reshape(batch, -1, d)
+        x = self.norm(x, cond)
+        x = self.act(x)
+        x = self.mix(x)
+        x = x.reshape(batch, dur, seq, d)
+        return x
 
 class UnPatchCond(nn.Module):
     def __init__(self, height, width, in_channels=64, out_channels=3, patch_size=2):
