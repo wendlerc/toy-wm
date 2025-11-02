@@ -17,15 +17,15 @@ if __name__ == "__main__":
         device = t.device("cpu")
         print("Using device: CPU")
 
-    loader = get_loader(duration=1, fps=12)
+    loader = get_loader(duration=1, fps=6)
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, patch_size=4)
+    model = get_model(height, width, patch_size=4, d_model=32)
     model = model.to(device)  # Move model to device
     #model = model.to(t.bfloat16)
     # Pass device to train if needed, or make sure trainer and dataloader use device
     wandb.watch(model)
-    model = train(model, loader, lr=1e-4)
+    model = train(model, loader, lr=1e-3)
 
     import os
     from datetime import datetime

@@ -1,15 +1,15 @@
 import torch as t
 import torch.nn.functional as F
-from torch.optim import Adam
+from torch.optim import AdamW
 from tqdm import tqdm
 import wandb
 from pdb import set_trace
 
-def train(model, dataloader, lr=1e-4, max_steps=1000):
+def train(model, dataloader, lr=1e-4, weight_decay=1e-4, max_steps=1000):
 
     device = model.device
     dtype = model.dtype
-    optimizer = Adam(model.parameters(), lr=lr)
+    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:

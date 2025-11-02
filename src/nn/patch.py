@@ -31,7 +31,7 @@ class UnPatch(nn.Module):
         self.patch_size = patch_size
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.unpatch = nn.Linear(64, out_channels*patch_size**2)
+        self.unpatch = nn.Linear(in_channels, out_channels*patch_size**2)
 
     def forward(self, x):
         x = self.unpatch(x)
