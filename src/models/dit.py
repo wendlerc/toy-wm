@@ -47,7 +47,9 @@ class CausalBlock(nn.Module):
 
 
 class CausalDit(nn.Module):
-    def __init__(self, height, width, n_window, d_model, T, patch_size=2, n_heads=8, expansion=4, n_blocks=6, n_registers=1, n_actions=3):
+    def __init__(self, height, width, n_window, d_model, T, 
+                       patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
+                       n_registers=1, n_actions=3, debug=False):
         super().__init__()
         self.height = height
         self.width = width
@@ -56,9 +58,12 @@ class CausalDit(nn.Module):
         self.n_blocks = n_blocks
         self.expansion = expansion
         self.n_registers = n_registers
+        self.T = T
+        self.patch_size = patch_size
+        self.debug = debug
         self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads) for _ in range(n_blocks)])
-        self.patch = Patch(out_channels=d_model)
-        self.unpatch = UnPatch(height, width, in_channels=d_model)
+        self.patch = Patch(out_channels=d_model, patch_size=patch_size)
+        self.unpatch = UnPatch(height, width, in_channels=d_model, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
         self.pe_grid = nn.Parameter(t.randn(height//patch_size*width//patch_size, d_model) * 1/d_model**0.5)
@@ -104,17 +109,17 @@ class CausalDit(nn.Module):
         a = self.action_emb(actions) # batch dur d
         # a += self.pe_frames[None]
         # self.registers is in 1x
-        print('z', z.shape)
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
         xa = t.cat((x, a[:, :-1].unsqueeze(2)), dim=2)
         mask_cross, mask_self = self.causal_mask(zr, xa)
         batch, durzr, seqzr, d = zr.shape
-        print('zr', zr.shape)
         batch, durxa, seqxa, d = xa.shape
         zr = zr.reshape(batch, -1, d) # batch durseq d
         xa = xa.reshape(batch, -1, d)
-        cond = self.time_emb(ts)
-        clean = self.time_emb(t.zeros((ts.shape[0], ts.shape[1]-1), dtype=ts.dtype, device=ts.device))
+        if ts.shape[1] == 1:
+            ts = ts.repeat(1, z.shape[1])
+        cond = self.time_emb((ts * self.T).long())
+        clean = self.time_emb(t.zeros((ts.shape[0], ts.shape[1]-1), dtype=t.long, device=ts.device))
         for block in self.blocks:
             zr, xa = block(zr, xa, cond, clean, mask_cross, mask_self)
         zr = zr.reshape(batch, durzr, seqzr, d)
@@ -136,30 +141,41 @@ class CausalDit(nn.Module):
 
         # zr: Float[Tensor, "batch dur seqzr d"], 
         # xa: Float[Tensor, "batch dur seqxa d"], 
-        m_left = t.eye(zr.shape[1], dtype=t.int8)
-        tmp = t.ones((zr.shape[1], zr.shape[1]), dtype=t.int8)
+        m_left = t.eye(zr.shape[1], dtype=t.int8, device=self.device)
+        tmp = t.ones((zr.shape[1], zr.shape[1]), dtype=t.int8, device=self.device)
         m_right = t.tril(tmp, -1) - t.tril(tmp, -1 - self.n_window)
         m_right = m_right[:, :-1]
 
         # blow them up to dur_seq and durkv_seqkv size
-        m_left = t.kron(m_left, t.ones((zr.shape[2], zr.shape[2]), dtype=t.int8))
-        m_right = t.kron(m_right, t.ones((zr.shape[2], xa.shape[2]), dtype=t.int8))
-        print(zr.shape, xa.shape)
-        m_self = t.tril(t.ones((xa.shape[1], xa.shape[1]), dtype=t.int8))
-        m_self = t.kron(m_self, t.ones((xa.shape[2],xa.shape[2]), dtype=t.int8))
+        m_left = t.kron(m_left, t.ones((zr.shape[2], zr.shape[2]), dtype=t.int8, device=self.device))
+        m_right = t.kron(m_right, t.ones((zr.shape[2], xa.shape[2]), dtype=t.int8, device=self.device))
+        m_self = t.tril(t.ones((xa.shape[1], xa.shape[1]), dtype=t.int8, device=self.device))
+        m_self = t.kron(m_self, t.ones((xa.shape[2],xa.shape[2]), dtype=t.int8, device=self.device))
         m_cross = t.cat((m_left, m_right), dim=1)
-        plt.imshow(m_cross.numpy())
-        plt.show()
-        plt.imshow(m_self.numpy())
-        plt.show()
+        m_cross = m_cross.to(bool)
+        m_self = m_self.to(bool)
+        if self.debug:
+            plt.imshow(m_cross.numpy())
+            plt.show()
+            plt.imshow(m_self.numpy())
+            plt.show()
         return ~m_cross, ~m_self # we want to mask out the ones
+    
+    @property
+    def device(self):
+        return self.parameters().__next__().device
+    
+    @property
+    def dtype(self):
+        return self.parameters().__next__().dtype
 
-
+def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2):
+    return CausalDit(height, width, n_window, d_model, T, n_blocks=n_blocks, patch_size=patch_size)
 
 if __name__ == "__main__":
     dit = CausalDit(20, 20, 3, 64, 5, n_blocks=2)
     frames = t.rand((2, 6-1, 3, 20, 20))
     z = t.rand((2, 6, 3, 20, 20))
     actions = t.randint(3, (2, 6))
-    ts = t.randint(5, (2, 6))
+    ts = t.rand((2, 6))
     out = dit(z, frames, actions, ts)

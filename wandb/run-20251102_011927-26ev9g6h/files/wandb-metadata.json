@@ -1,0 +1,35 @@
+{
+  "os": "macOS-15.6-arm64-arm-64bit-Mach-O",
+  "python": "CPython 3.13.5",
+  "startedAt": "2025-11-02T05:19:27.413117Z",
+  "program": "-m src.main",
+  "git": {
+    "remote": "git@github.com:wendlerc/toy-wm.git",
+    "commit": "bc6412e761d7a54e8d9f2472fcfd0bbb1481e603"
+  },
+  "email": "chris.wendler@epfl.ch",
+  "root": "/Users/chriswendler/Documents/2025/code/toy-wm",
+  "host": "Chriss-MacBook-Air.local",
+  "executable": "/Users/chriswendler/Documents/2025/code/toy-wm/.venv/bin/python3",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "1995218165760",
+      "used": "473005899776"
+    }
+  },
+  "memory": {
+    "total": "25769803776"
+  },
+  "apple": {
+    "name": "Apple M2",
+    "ecpuCores": 4,
+    "pcpuCores": 4,
+    "gpuCores": 10,
+    "memoryGb": 24,
+    "swapTotalBytes": "23622320128",
+    "ramTotalBytes": "25769803776"
+  },
+  "writerId": "668b7g4xuy430xq8rxfvsbwvrw0g62sf"
+}
