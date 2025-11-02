@@ -17,7 +17,7 @@ if __name__ == "__main__":
         device = t.device("cpu")
         print("Using device: CPU")
 
-    loader, _, _ = get_loader(duration=1, fps=6)
+    loader, _, _ = get_loader(batch_size=16, duration=1, fps=12)
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
     model = get_model(height, width, patch_size=4, d_model=32)
@@ -25,7 +25,7 @@ if __name__ == "__main__":
     #model = model.to(t.bfloat16)
     # Pass device to train if needed, or make sure trainer and dataloader use device
     wandb.watch(model)
-    model = train(model, loader, lr=1e-3)
+    model = train(model, loader, lr=1e-3, max_steps=10000)
 
     import os
     from datetime import datetime

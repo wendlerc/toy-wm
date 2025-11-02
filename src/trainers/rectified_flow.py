@@ -27,7 +27,7 @@ def sample(v, z, frames, actions, num_steps=50, uniform=False):
         z_prev = z_prev + (ts[i] - ts[i+1])*v(z_prev.to(device), frames[:, :-1].to(device), actions.to(device), t_cond.to(device)) 
     return z_prev
 
-@t.no_grad():
+@t.no_grad()
 def log_gif(z, tag="generated_gif"):
     """
     Create a gif from z[0] and log it to wandb.
