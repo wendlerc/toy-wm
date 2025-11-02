@@ -8,7 +8,7 @@ from typing import Optional
 class Attention(nn.Module):
     IGNORE: Float[Tensor, ""]
 
-    def __init__(self, d_model, n_heads):
+    def __init__(self, d_model, n_heads, rope=None):
         super().__init__()
         assert d_model % n_heads == 0, f"{d_model} must be divisble by {n_heads}"
         self.d_head = d_model // n_heads
@@ -26,6 +26,7 @@ class Attention(nn.Module):
         nn.init.normal_(self.W_V, 1/d_model**0.5)
         nn.init.normal_(self.W_O, 1/d_head**0.5)
         self.register_buffer("IGNORE", t.tensor(-1e5, dtype=t.float32))
+        self.rope = rope
 
 
     def forward(
@@ -51,7 +52,9 @@ class Attention(nn.Module):
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
             k = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
             v = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') + self.b_V
-
+        if self.rope is not None:
+            q = self.rope(q)
+            k = self.rope(k)
         attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
         attention /= d_head**0.5 # this was the mistake :D:D:D I had d_model here initially
         if mask is not None:

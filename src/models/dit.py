@@ -11,16 +11,64 @@ from torch import Tensor
 from typing import Optional
 
 import matplotlib.pyplot as plt
+import math
+
+class RoPE(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+        thetas = t.exp(-math.log(cfg.C)*t.arange(0,cfg.d_head,2)/cfg.d_head)
+        thetas = thetas.repeat([2,1]).T.flatten()
+        positions = t.arange(cfg.n_ctx)
+        all_thetas = positions.unsqueeze(1)*thetas.unsqueeze(0)
+        sins = t.sin(all_thetas)
+        coss = t.cos(all_thetas)
+        self.register_buffer('sins', sins.unsqueeze(0).unsqueeze(2))
+        self.register_buffer('coss', coss.unsqueeze(0).unsqueeze(2))
+    
+    def forward(self, key_or_query: Float[Tensor, "batch sequence n_head d_head"]):
+        x = key_or_query
+        # start with doing it for just a single position m  
+        x_perm = t.empty(x.shape, device=x.device) # batch sequence n_head d_head, we perm the last axis
+        even = t.arange(0, x.shape[-1], 2)
+        odd = t.arange(1, x.shape[-1],2)
+        x_perm[:, :, :, even] = -x[:, :, :, odd]
+        x_perm[:, :, :, odd] = x[:, :, :, even]
+        return self.coss[:,:x.shape[1]]*x + self.sins[:,:x.shape[1]]*x_perm
+
+class FrameRoPE(nn.Module):
+    def __init__(self, d_head, n_ctx, toks_per_frame, C=10000):
+        super().__init__()
+        thetas = t.exp(-math.log(C)*t.arange(0,d_head,2)/d_head)
+        thetas = thetas.repeat([2,1]).T.flatten()
+        positions = t.arange(n_ctx)
+        all_thetas = positions.unsqueeze(1)*thetas.unsqueeze(0)
+        sins = t.sin(all_thetas)
+        coss = t.cos(all_thetas)
+        self.register_buffer('sins', sins.unsqueeze(0).unsqueeze(2))
+        self.register_buffer('coss', coss.unsqueeze(0).unsqueeze(2))
+        self.toks_per_frame = toks_per_frame
+    
+    def forward(self, key_or_query: Float[Tensor, "batch dur*seq n_head d_head"]):
+        x = key_or_query
+        # start with doing it for just a single position m  
+        x_perm = t.empty(x.shape, device=x.device) # batch sequence n_head d_head, we perm the last axis
+        even = t.arange(0, x.shape[-1], 2)
+        odd = t.arange(1, x.shape[-1], 2)
+        x_perm[:, :, :, even] = -x[:, :, :, odd]
+        x_perm[:, :, :, odd] = x[:, :, :, even]
+        idcs = t.arange(0, x.shape[1]//self.toks_per_frame, device=x.device)
+        idcs = idcs[:, None].repeat(1, self.toks_per_frame).flatten()
+        return self.coss[:,idcs]*x + self.sins[:,idcs]*x_perm
 
 class CausalBlock(nn.Module):
-    def __init__(self, d_model, expansion, n_heads):
+    def __init__(self, d_model, expansion, n_heads, rope=None):
         super().__init__()
         self.d_model = d_model
         self.expansion = expansion
         self.n_heads = n_heads
-
         self.norm1 = AdaLN(d_model)
-        self.attn = Attention(d_model, n_heads)
+        self.crossattn = Attention(d_model, n_heads, rope=rope)
+        self.selfattn = Attention(d_model, n_heads, rope=rope)
         self.gate1 = Gate(d_model)
         self.norm2 = AdaLN(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
@@ -32,8 +80,8 @@ class CausalBlock(nn.Module):
         zr = self.norm1(zr, cond) 
         xa = self.norm1(xa, clean) 
         xkv = t.cat((zr, xa), dim=1)
-        crossattn, _, _ = self.attn(zr, xkv, mask=mask_cross)
-        selfattn, _, _ = self.attn(xa, xa, mask=mask_self)
+        crossattn, _, _ = self.crossattn(zr, xkv, mask=mask_cross)
+        selfattn, _, _ = self.selfattn(xa, xa, mask=mask_self)
         zr = self.gate1(zr, cond)
         xa = self.gate1(xa, clean)
 
@@ -49,7 +97,7 @@ class CausalBlock(nn.Module):
 class CausalDit(nn.Module):
     def __init__(self, height, width, n_window, d_model, T, 
                        patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
-                       n_registers=1, n_actions=3, debug=False):
+                       n_registers=1, n_actions=3, nctx=20000, debug=False):
         super().__init__()
         self.height = height
         self.width = width
@@ -61,7 +109,8 @@ class CausalDit(nn.Module):
         self.T = T
         self.patch_size = patch_size
         self.debug = debug
-        self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads) for _ in range(n_blocks)])
+        self.frame_rope = FrameRoPE(d_model//n_heads, nctx, height//patch_size*width//patch_size + n_registers)
+        self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.frame_rope) for _ in range(n_blocks)])
         self.patch = Patch(out_channels=d_model, patch_size=patch_size)
         self.unpatch = UnPatch(height, width, in_channels=d_model, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
@@ -110,7 +159,7 @@ class CausalDit(nn.Module):
         # a += self.pe_frames[None]
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
-        xa = t.cat((x, a[:, :-1].unsqueeze(2)), dim=2)
+        xa = t.cat((x, self.registers[None, None].repeat([x.shape[0], x.shape[1], 1, 1])), dim=2)
         mask_cross, mask_self = self.causal_mask(zr, xa)
         batch, durzr, seqzr, d = zr.shape
         batch, durxa, seqxa, d = xa.shape
@@ -118,8 +167,8 @@ class CausalDit(nn.Module):
         xa = xa.reshape(batch, -1, d)
         if ts.shape[1] == 1:
             ts = ts.repeat(1, z.shape[1])
-        cond = self.time_emb((ts * self.T).long())
-        clean = self.time_emb(t.zeros((ts.shape[0], ts.shape[1]-1), dtype=t.long, device=ts.device))
+        cond = self.time_emb((ts * self.T).long()) + a
+        clean = self.time_emb(t.zeros((ts.shape[0], ts.shape[1]-1), dtype=t.long, device=ts.device)) + a[:, :-1]
         for block in self.blocks:
             zr, xa = block(zr, xa, cond, clean, mask_cross, mask_self)
         zr = zr.reshape(batch, durzr, seqzr, d)

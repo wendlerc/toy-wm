@@ -22,20 +22,21 @@ if __name__ == "__main__":
     loader, _, _ = get_loader(batch_size=16, duration=1, fps=12)
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, patch_size=2, d_model=64, n_blocks=6)
+    model = get_model(height, width, n_window=6, patch_size=4, d_model=32, n_blocks=2)
     model = model.to(device)  # Move model to device
 
     # Apply torch compile for acceleration (PyTorch 2.0+)
-    try:
-        model = t.compile(model)
-        print("Model compiled with torch.compile for acceleration.")
-    except AttributeError:
-        print("torch.compile is not available in this version of PyTorch; running without compilation.")
+    
+    #try:
+    #    model = t.compile(model)
+    #    print("Model compiled with torch.compile for acceleration.")
+    #except AttributeError:
+    #    print("torch.compile is not available in this version of PyTorch; running without compilation.")
 
     #model = model.to(t.bfloat16)
     # Pass device to train if needed, or make sure trainer and dataloader use device
     wandb.watch(model)
-    model = train(model, loader, lr=1e-3, max_steps=10000)
+    model = train(model, loader, lr=1e-2, max_steps=1000)
 
     import os
     from datetime import datetime

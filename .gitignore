@@ -1,7 +1,9 @@
 # Byte-compiled / optimized / DLL files
 wandb/
 .venv/
-./datasets/
+*.npy
+*.png
+*.gif
 __pycache__/
 *.py[codz]
 *$py.class
