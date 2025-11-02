@@ -124,7 +124,6 @@ class CausalDit(nn.Module):
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
         self.pe_grid = nn.Parameter(t.randn(height//patch_size*width//patch_size, d_model) * 1/d_model**0.5)
-        self.pe_frames = nn.Parameter(t.randn(n_window, d_model) * 1/d_model**0.5)
         self.time_emb = nn.Embedding(T, d_model) # exchange to sinusoidal
     
     def forward(self, 
