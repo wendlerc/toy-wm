@@ -19,10 +19,10 @@ if __name__ == "__main__":
         device = t.device("cpu")
         print("Using device: CPU")
 
-    loader, _, _ = get_loader(batch_size=32, duration=1, fps=12)
+    loader, _, _ = get_loader(batch_size=32, duration=1, fps=7)
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, n_window=6, patch_size=4, d_model=32, n_blocks=6)
+    model = get_model(height, width, n_window=7, patch_size=2, d_model=64, n_blocks=12)
     model = model.to(device)  # Move model to device
 
     # Apply torch compile for acceleration (PyTorch 2.0+)
@@ -35,7 +35,8 @@ if __name__ == "__main__":
     #model = model.to(t.bfloat16)
     # Pass device to train if needed, or make sure trainer and dataloader use device
     # wandb.watch(model, log="all", log_freq=100)  # log_freq reduces logging overhead, log="all" avoids gradient tracking issues
-    model = train(model, loader, lr1=0.002, lr2=3e-5, betas=(0.9, 0.95), weight_decay=1e-5, max_steps=10000)
+    model = train(model, loader, lr1=0.01, lr2=1.5e-4, betas=(0.9, 0.95), weight_decay=1e-5, max_steps=26000)
+    # 0.002, 3e-5, (0.9, 0.95), 1e-5, 26000 works ok
 
     import os
     from datetime import datetime
