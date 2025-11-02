@@ -13,13 +13,21 @@ import wandb
 from torch.nn import functional as F
 from tqdm import tqdm
 
+mean = t.tensor([[[[[0.0352]],
+                    [[0.1046]],
+                    [[0.1046]]]]]) 
+std = t.tensor([[[[[0.1066]],
+                    [[0.0995]],
+                    [[0.0995]]]]])
+
+
 @t.no_grad()
 def sample(v, z, frames, actions, num_steps=50, uniform=False):
     device = v.device
     if uniform: 
-        ts = 1 - t.linspace(0, 1, num_steps, device=device)
+        ts = 1 - t.linspace(0, 1, num_steps+1, device=device)
     else:
-        ts = 1 - F.sigmoid(t.randn(num_steps, device=device).msort())
+        ts = 1 - F.sigmoid(t.randn(num_steps+1, device=device).msort())
     z_prev = z.clone()
     z_prev = z_prev.to(device)
     for i in tqdm(range(len(ts)-1)):
@@ -27,40 +35,26 @@ def sample(v, z, frames, actions, num_steps=50, uniform=False):
         z_prev = z_prev + (ts[i] - ts[i+1])*v(z_prev.to(device), frames[:, :-1].to(device), actions.to(device), t_cond.to(device)) 
     return z_prev
 
-@t.no_grad()
-def log_gif(z, tag="generated_gif"):
+
+def log_video(z, tag="generated_video", fps=5):
     """
-    Create a gif from z[0] and log it to wandb.
-
-    Args:
-        z: torch.Tensor, shape (1, num_frames, C, H, W)
-        tag: str, wandb image label
+    Log a video to wandb from a tensor of frames.
+    z: (B, T, C, H, W) or (T, C, H, W) in [0,1] float
     """
-    # Convert frames to numpy: (num_frames, H, W, C)
-    frames_np = z[0].permute(0, 2, 3, 1).clamp(0, 1).cpu().numpy()
+    if z.ndim == 5:
+        frames = z[0]        # take first in batch
+    elif z.ndim == 4:
+        frames = z
+    else:
+        raise ValueError(f"Unexpected shape: {z.shape}")
 
-    fig, ax = plt.subplots()
-    im = ax.imshow(frames_np[0])
-    ax.set_title('Frame 0')
+    # Convert to uint8 for video logging (T, C, H, W)
+    frames_uint8 = (frames.clamp(0, 1) * 255).byte().cpu().numpy()
 
-    def animate(i):
-        im.set_data(frames_np[i])
-        ax.set_title(f'Frame {i}')
-        return [im]
+    wandb.log({
+        tag: wandb.Video(frames_uint8, fps=fps, format="mp4")
+    })
 
-    ani = animation.FuncAnimation(
-        fig, animate, frames=frames_np.shape[0],
-        interval=200, blit=True, repeat=True
-    )
-
-    # Save animation to buffer as gif and upload to wandb
-    buf = io.BytesIO()
-    ani.save(buf, format='gif')
-    buf.seek(0)
-
-    wandb.log({tag: wandb.Video(buf, format="gif")})
-
-    plt.close(fig)
 
 def train(model, dataloader, lr=1e-4, weight_decay=1e-4, max_steps=1000):
 
@@ -89,6 +83,7 @@ def train(model, dataloader, lr=1e-4, weight_decay=1e-4, max_steps=1000):
         pbar.set_postfix(loss=loss.item())
         if step % 100 == 0:
             z_sampled = sample(model, t.randn_like(frames, device=device, dtype=dtype), frames, actions)
-            log_gif(z_sampled, tag=f"generated_gif_{step}")
+            z_samples = z_sampled.cpu()*std + mean
+            log_video(z_sampled, tag=f"generated_gif_{step}")
 
     return model
