@@ -4,6 +4,8 @@ from .trainers.rectified_flow import train
 import wandb
 
 import torch as t
+t.set_float32_matmul_precision("high")
+
 if __name__ == "__main__":
     wandb.init(project="toy-wm")
     # Detect MPS (Apple Silicon) or CUDA if available
@@ -20,8 +22,16 @@ if __name__ == "__main__":
     loader, _, _ = get_loader(batch_size=16, duration=1, fps=12)
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, patch_size=4, d_model=32)
+    model = get_model(height, width, patch_size=2, d_model=64, n_blocks=6)
     model = model.to(device)  # Move model to device
+
+    # Apply torch compile for acceleration (PyTorch 2.0+)
+    try:
+        model = t.compile(model)
+        print("Model compiled with torch.compile for acceleration.")
+    except AttributeError:
+        print("torch.compile is not available in this version of PyTorch; running without compilation.")
+
     #model = model.to(t.bfloat16)
     # Pass device to train if needed, or make sure trainer and dataloader use device
     wandb.watch(model)

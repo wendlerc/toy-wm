@@ -39,8 +39,8 @@ class CausalBlock(nn.Module):
 
         zr = self.norm2(zr + crossattn, cond)
         xa = self.norm2(xa + selfattn, clean)
-        zr = self.geglu(zr)
-        xa = self.geglu(xa)
+        zr = zr + self.geglu(zr)
+        xa = xa + self.geglu(xa)
         zr = self.gate2(zr, cond)
         xa = self.gate2(xa, clean)
         return zr, xa
