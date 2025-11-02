@@ -25,7 +25,7 @@ std = t.tensor([[[[[0.1066]],
 
 
 @t.no_grad()
-def sample(v, z, frames, actions, num_steps=50, uniform=False):
+def sample(v, z, frames, actions, num_steps=100, uniform=False):
     device = v.device
     if uniform: 
         ts = 1 - t.linspace(0, 1, num_steps+1, device=device)
