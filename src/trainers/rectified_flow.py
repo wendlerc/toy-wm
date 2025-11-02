@@ -13,6 +13,9 @@ import wandb
 from torch.nn import functional as F
 from tqdm import tqdm
 
+from muon import MuonWithAuxAdam
+
+
 mean = t.tensor([[[[[0.0352]],
                     [[0.1046]],
                     [[0.1046]]]]]) 
@@ -61,11 +64,22 @@ def log_video(z, tag="generated_video", fps=5):
     })
 
 
-def train(model, dataloader, lr=1e-2, weight_decay=1e-5, max_steps=1000):
+def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000):
 
     device = model.device
     dtype = model.dtype
-    optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    # optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.90, 0.95), weight_decay=0.01)
+
+    hidden_weights = [p for p in model.blocks.parameters() if p.ndim >= 2]
+    hidden_gains_biases = [p for p in model.blocks.parameters() if p.ndim < 2]
+    nonhidden_params = [*model.patch.parameters(), *model.unpatch.parameters(), *model.action_emb.parameters(), *model.registers.parameters(), *model.pe_grid.parameters(), *model.pe_frames.parameters(), *model.time_emb.parameters()]
+    param_groups = [
+        dict(params=hidden_weights, use_muon=True,
+            lr=lr1, weight_decay=weight_decay),
+        dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
+            lr=lr2, betas=betas, weight_decay=weight_decay),
+    ]
+    optimizer = MuonWithAuxAdam(param_groups)
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
