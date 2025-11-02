@@ -48,6 +48,7 @@ class RoPE(nn.Module):
         x_perm[:, :, :, odd] = x[:, :, :, even]
         return self.coss[:,:x.shape[1]]*x + self.sins[:,:x.shape[1]]*x_perm
 
+
 class FrameRoPE(nn.Module):
     def __init__(self, d_head, n_ctx, toks_per_frame, C=10000):
         super().__init__()
