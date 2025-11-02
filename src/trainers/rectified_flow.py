@@ -71,7 +71,11 @@ def train(model, dataloader, lr=1e-2, weight_decay=1e-5, max_steps=1000):
     for step in pbar:
         #set_trace()
         optimizer.zero_grad()
-        frames, actions = next(iterator)
+        try:
+            frames, actions = next(iterator)
+        except StopIteration:
+            iterator = iter(dataloader)
+            frames, actions = next(iterator)
         frames = frames.to(device).to(dtype)
         actions = actions.to(device)
 
