@@ -3,7 +3,7 @@ from torch import nn
 import torch as t
 import numpy as np
 
-def get_loader(batch_size=64, fps=30, duration=5, shuffle=True):
+def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False):
     frames = t.from_numpy(np.load("./datasets/pong1M/frames.npy"))
     actions = t.from_numpy(np.load("./datasets/pong1M/actions.npy"))
     height, width, channels = frames.shape[-3:]
@@ -19,6 +19,11 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True):
     # frames = 2*frames - 1 # this creates nans
     actions = actions[:n*fps*duration]
     actions = actions.reshape(-1, fps*duration)
+    firstf = frames[0]
+    firsta = actions[0]
+    if debug:
+        frames = 0*frames + firstf[None]
+        actions = 0*actions + firsta[None]
     dataset = TensorDataset(frames, actions)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     print(f"{frames.shape[0]//batch_size} batches")
