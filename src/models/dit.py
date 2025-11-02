@@ -77,20 +77,28 @@ class CausalBlock(nn.Module):
     def forward(self, zr, xa, cond, clean, mask_cross, mask_self):
         # batch durseq1 d
         # batch durseq2 d
-        zr = self.norm1(zr, cond) 
-        xa = self.norm1(xa, clean) 
-        xkv = t.cat((zr, xa), dim=1)
-        crossattn, _, _ = self.crossattn(zr, xkv, mask=mask_cross)
-        selfattn, _, _ = self.selfattn(xa, xa, mask=mask_self)
+        residual_zr = zr
+        residual_xa = xa
+        zr = self.norm1(zr, cond)
+        xa = self.norm1(xa, clean)
+        xkv = t.cat((zr , xa), dim=1)
+        zr, _, _ = self.crossattn(zr, xkv, mask=mask_cross)
+        xa, _, _ = self.selfattn(xa, xa, mask=mask_self)
         zr = self.gate1(zr, cond)
         xa = self.gate1(xa, clean)
+        zr = zr + residual_zr
+        xa = xa + residual_xa
 
-        zr = self.norm2(zr + crossattn, cond)
-        xa = self.norm2(xa + selfattn, clean)
-        zr = zr + self.geglu(zr)
-        xa = xa + self.geglu(xa)
+        residual_zr = zr
+        residual_xa = xa
+        zr = self.norm2(zr, cond)
+        xa = self.norm2(xa, clean)
+        zr = self.geglu(zr)
+        xa = self.geglu(xa)
         zr = self.gate2(zr, cond)
         xa = self.gate2(xa, clean)
+        zr = zr + residual_zr
+        xa = xa + residual_xa
         return zr, xa
 
 
