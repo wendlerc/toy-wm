@@ -62,11 +62,13 @@ class CausalDit(nn.Module):
         self.frame_rope = FrameRoPE(d_model//n_heads, nctx, height//patch_size*width//patch_size + n_registers)
         self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.frame_rope) for _ in range(n_blocks)])
         self.patch = Patch(out_channels=d_model, patch_size=patch_size)
-        self.unpatch = UnPatchCond(height, width, in_channels=d_model, patch_size=patch_size)
+        self.norm = AdaLN(d_model)
+        self.unpatch = UnPatch(height, width, in_channels=d_model, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
         self.pe_grid = nn.Parameter(t.randn(height//patch_size*width//patch_size, d_model) * 1/d_model**0.5)
         self.time_emb = NumericEncoding(dim=d_model, n_max=T)
+        self.time_emb_mixer = nn.Linear(d_model, d_model)
     
     def forward(self, 
                 z: Float[Tensor, "batch dur channels height width"], 
@@ -77,8 +79,8 @@ class CausalDit(nn.Module):
             ts = ts.repeat(1, z.shape[1])
 
         a = self.action_emb(actions) # batch dur d
-        cond = self.time_emb((ts * self.T).long()) 
-        cond += a
+        ts_scaled = (ts * self.T).clamp(0, self.T - 1).long()
+        cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
 
         z = self.patch(z) # batch dur seq d
         z += self.pe_grid[None, None]
@@ -91,9 +93,10 @@ class CausalDit(nn.Module):
         
         for block in self.blocks:
             zr = block(zr, cond, mask_self)
+        zr = self.norm(zr, cond)
         zr = zr.reshape(batch, durzr, seqzr, d)
 
-        out = self.unpatch(zr[:, :, :-self.n_registers], cond)
+        out = self.unpatch(zr[:, :, :-self.n_registers])
         return out # batch dur channels height width
     
     def causal_mask(self, z):

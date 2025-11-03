@@ -48,21 +48,15 @@ def log_video(z, tag="generated_video", fps=5):
         frames = z
     else:
         raise ValueError(f"Unexpected shape: {z.shape}")
-
-    # Convert to uint8 for video logging (T, C, H, W)
-    # boxplot frames
-    plt.boxplot(frames.flatten().cpu())
-    plt.savefig(f"{tag}_boxplot.png")
-    plt.close()
+    
     frames_uint8 = (frames.clamp(0, 1) * 255).byte().cpu().numpy()
-    print(frames_uint8.shape)
 
     wandb.log({
         tag: wandb.Video(frames_uint8, fps=fps, format="mp4")
     })
 
 
-def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000):
+def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, clipping=True):
 
     device = model.device
     dtype = model.dtype
@@ -105,7 +99,8 @@ def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay
         loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
         wandb.log({"loss": loss.item()})
         loss.backward()
-        t.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        if clipping:
+            t.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         pbar.set_postfix(loss=loss.item())
         if step % 100 == 0:
