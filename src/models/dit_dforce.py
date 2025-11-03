@@ -46,7 +46,7 @@ class CausalBlock(nn.Module):
 class CausalDit(nn.Module):
     def __init__(self, height, width, n_window, d_model, T=1000, 
                        patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
-                       n_registers=1, n_actions=4, nctx=20000, debug=False, legacy=False):
+                       n_registers=1, n_actions=4, bidirectional=False, debug=False, legacy=False):
         super().__init__()
         self.height = height
         self.width = width
@@ -59,7 +59,8 @@ class CausalDit(nn.Module):
         self.patch_size = patch_size
         self.debug = debug
         self.legacy = legacy
-        self.frame_rope = FrameRoPE(d_model//n_heads, nctx, height//patch_size*width//patch_size + n_registers)
+        self.bidirectional = bidirectional
+        self.frame_rope = FrameRoPE(d_model//n_heads, n_window, height//patch_size*width//patch_size + n_registers)
         self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.frame_rope) for _ in range(n_blocks)])
         self.patch = Patch(out_channels=d_model, patch_size=patch_size)
         self.norm = AdaLN(d_model)
@@ -87,7 +88,10 @@ class CausalDit(nn.Module):
 
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
-        mask_self = self.causal_mask(zr)
+        if self.bidirectional:
+            mask_self = None
+        else:
+            mask_self = self.causal_mask(zr)
         batch, durzr, seqzr, d = zr.shape
         zr = zr.reshape(batch, -1, d) # batch durseq d
         
@@ -113,8 +117,8 @@ class CausalDit(nn.Module):
     def dtype(self):
         return self.parameters().__next__().dtype
 
-def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8):
-    return CausalDit(height, width, n_window, d_model, T, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads)
+def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False):
+    return CausalDit(height, width, n_window, d_model, T, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional)
 
 if __name__ == "__main__":
     dit = CausalDit(20, 20, 3, 64, 5, n_blocks=2)
