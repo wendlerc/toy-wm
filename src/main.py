@@ -1,6 +1,6 @@
 from .datasets.pong1m import get_loader
-from .models.dit import get_model
-from .trainers.rectified_flow import train
+from .models.dit_dforce import get_model
+from .trainers.diffusion_forcing import train
 import wandb
 
 import torch as t
@@ -19,10 +19,10 @@ if __name__ == "__main__":
         device = t.device("cpu")
         print("Using device: CPU")
 
-    loader, _, _ = get_loader(batch_size=16, duration=1, fps=12, debug=True)
+    loader, _, _ = get_loader(batch_size=16, duration=1, fps=12, debug=False)
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, n_window=6, patch_size=4, d_model=64, n_blocks=2)
+    model = get_model(height, width, n_window=12, patch_size=3, d_model=64, n_heads=4, n_blocks=4, T=1000)
     model = model.to(device)  # Move model to device
 
     # Apply torch compile for acceleration (PyTorch 2.0+)
