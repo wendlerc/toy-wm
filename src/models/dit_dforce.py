@@ -77,7 +77,8 @@ class CausalDit(nn.Module):
             ts = ts.repeat(1, z.shape[1])
 
         a = self.action_emb(actions) # batch dur d
-        cond = self.time_emb((ts * self.T).long()) 
+        ts_scaled = (ts * self.T).clamp(0, self.T - 1).long()
+        cond = self.time_emb(ts_scaled) 
         cond += a
 
         z = self.patch(z) # batch dur seq d

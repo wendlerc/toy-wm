@@ -1,0 +1,1 @@
+model = get_model(height, width, n_window=6, patch_size=4, d_model=32, n_blocks=6)

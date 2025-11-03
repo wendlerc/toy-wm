@@ -119,7 +119,8 @@ class CausalDit(nn.Module):
             ts = ts.repeat(1, z.shape[1])
 
         a = self.action_emb(actions) # batch dur d
-        cond = self.time_emb((ts * self.T).long()) 
+        ts_scaled = (ts * self.T).clamp(0, self.T - 1).long()
+        cond = self.time_emb(ts_scaled) 
         if self.legacy:
             cond += a
         else:
@@ -198,8 +199,8 @@ class CausalDit(nn.Module):
     def dtype(self):
         return self.parameters().__next__().dtype
 
-def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2):
-    return CausalDit(height, width, n_window, d_model, T, n_blocks=n_blocks, patch_size=patch_size)
+def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=4):
+    return CausalDit(height, width, n_window, d_model, T, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads)
 
 if __name__ == "__main__":
     dit = CausalDit(20, 20, 3, 64, 5, n_blocks=2)

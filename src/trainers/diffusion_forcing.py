@@ -25,7 +25,7 @@ std = t.tensor([[[[[0.1066]],
 
 
 @t.no_grad()
-def sample(v, z, frames, actions, num_steps=10):
+def sample(v, z, actions, num_steps=10):
     device = v.device
     ts = 1 - t.linspace(0, 1, num_steps+1, device=device)
     ts = 3*ts/(2*ts + 1)
@@ -51,18 +51,23 @@ def log_video(z, tag="generated_video", fps=5):
 
     # Convert to uint8 for video logging (T, C, H, W)
     # boxplot frames
-    plt.boxplot(frames.flatten().cpu())
-    plt.savefig(f"{tag}_boxplot.png")
-    plt.close()
+    fig, ax = plt.subplots()
+    ax.boxplot(frames.flatten().cpu())
+    ax.set_title(f"Boxplot of {tag}")
+    fig.canvas.draw()
+    img_data = io.BytesIO()
+    fig.savefig(img_data, format='png')
+    img_data.seek(0)
+    plt.close(fig)
+    wandb.log({f"{tag}_boxplot": wandb.Image(img_data, caption=f"{tag} boxplot")})
     frames_uint8 = (frames.clamp(0, 1) * 255).byte().cpu().numpy()
-    print(frames_uint8.shape)
 
     wandb.log({
         tag: wandb.Video(frames_uint8, fps=fps, format="mp4")
     })
 
 
-def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000):
+def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, clipping=True):
 
     device = model.device
     dtype = model.dtype
@@ -105,11 +110,12 @@ def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay
         loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
         wandb.log({"loss": loss.item()})
         loss.backward()
-        t.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        if clipping:
+            t.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         pbar.set_postfix(loss=loss.item())
         if step % 100 == 0:
-            z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), frames[:1],actions[:1], num_steps=10)
+            z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             z_sampled = z_sampled.cpu()*std + mean
             log_video(z_sampled, tag=f"{step:04d}")
 
