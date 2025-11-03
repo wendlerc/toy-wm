@@ -25,7 +25,7 @@ std = t.tensor([[[[[0.1066]],
 
 
 @t.no_grad()
-def sample(v, z, frames, actions, num_steps=10):
+def sample(v, z, actions, num_steps=10):
     device = v.device
     ts = 1 - t.linspace(0, 1, num_steps+1, device=device)
     ts = 3*ts/(2*ts + 1)
@@ -109,7 +109,7 @@ def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay
         optimizer.step()
         pbar.set_postfix(loss=loss.item())
         if step % 100 == 0:
-            z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), frames[:1],actions[:1], num_steps=10)
+            z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             z_sampled = z_sampled.cpu()*std + mean
             log_video(z_sampled, tag=f"{step:04d}")
 
