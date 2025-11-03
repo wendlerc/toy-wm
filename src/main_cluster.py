@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser.add_argument("--T", type=int, default=1000)
     parser.add_argument("--noclip", action="store_true")
     parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--bidirectional", action="store_true")
     args = parser.parse_args()
 
     wandb.init(project="toy-wm")
@@ -49,7 +50,7 @@ if __name__ == "__main__":
     loader, _, _ = get_loader(batch_size=args.batch_size, duration=args.duration, fps=args.fps, debug=args.debug) # 7 was the max that does not go oom
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, n_window=args.n_window, patch_size=args.patch_size, n_heads=args.n_heads,d_model=args.d_model, n_blocks=args.n_blocks, T=args.T)
+    model = get_model(height, width, n_window=args.n_window, patch_size=args.patch_size, n_heads=args.n_heads,d_model=args.d_model, n_blocks=args.n_blocks, T=args.T, bidirectional=args.bidirectional)
     model = model.to(device)  # Move model to device
 
     # Apply torch compile for acceleration (PyTorch 2.0+)
