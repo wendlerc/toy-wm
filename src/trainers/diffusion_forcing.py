@@ -48,18 +48,7 @@ def log_video(z, tag="generated_video", fps=5):
         frames = z
     else:
         raise ValueError(f"Unexpected shape: {z.shape}")
-
-    # Convert to uint8 for video logging (T, C, H, W)
-    # boxplot frames
-    fig, ax = plt.subplots()
-    ax.boxplot(frames.flatten().cpu())
-    ax.set_title(f"Boxplot of {tag}")
-    fig.canvas.draw()
-    img_data = io.BytesIO()
-    fig.savefig(img_data, format='png')
-    img_data.seek(0)
-    plt.close(fig)
-    wandb.log({f"{tag}_boxplot": wandb.Image(img_data, caption=f"{tag} boxplot")})
+    
     frames_uint8 = (frames.clamp(0, 1) * 255).byte().cpu().numpy()
 
     wandb.log({

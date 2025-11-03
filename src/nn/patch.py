@@ -34,8 +34,6 @@ class UnPatch(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.unpatch = nn.Linear(in_channels, out_channels*patch_size**2)
-        nn.init.normal_(self.unpatch.weight, mean=0.0, std=1/in_channels) # smaller init to cap the loss at the beginning
-        nn.init.constant_(self.unpatch.bias, 0.0)
 
     def forward(self, x):
         x = self.unpatch(x)
