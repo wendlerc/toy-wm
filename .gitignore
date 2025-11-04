@@ -1,6 +1,7 @@
 # Byte-compiled / optimized / DLL files
 wandb/
 .venv/
+experiments/
 *.npy
 *.png
 *.gif

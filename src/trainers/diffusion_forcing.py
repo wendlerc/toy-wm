@@ -12,9 +12,9 @@ import wandb
 
 from torch.nn import functional as F
 from tqdm import tqdm
+import math
 
 from muon import SingleDeviceMuonWithAuxAdam
-
 
 mean = t.tensor([[[[[0.0352]],
                     [[0.1046]],
@@ -33,7 +33,10 @@ def sample(v, z, actions, num_steps=10):
     z_prev = z_prev.to(device)
     for i in tqdm(range(len(ts)-1)):
         t_cond = ts[i].repeat(z_prev.shape[0], 1)
-        z_prev = z_prev + (ts[i] - ts[i+1])*v(z_prev.to(device), actions.to(device), t_cond.to(device)) 
+        v_pred = v(z_prev.to(device), actions.to(device), t_cond.to(device))
+        #print("v_pred min max", v_pred.min().item(), v_pred.max().item())
+        #print("v_pred mean std", v_pred.mean().item(), v_pred.std().item())
+        z_prev = z_prev + (ts[i] - ts[i+1])*v_pred 
     return z_prev
 
 
@@ -48,15 +51,16 @@ def log_video(z, tag="generated_video", fps=5):
         frames = z
     else:
         raise ValueError(f"Unexpected shape: {z.shape}")
-    
-    frames_uint8 = (frames.clamp(0, 1) * 255).byte().cpu().numpy()
-
-    wandb.log({
-        tag: wandb.Video(frames_uint8, fps=fps, format="mp4")
-    })
+    #frames_uint8 = (((frames.clamp(-1, 1) + 1)/2) * 255).byte().cpu().numpy()
+    #frames_uint8 = ((F.tanh(frames)+1)/2*255).byte().cpu().numpy()
+    frames_uint8 = frames.byte().cpu().numpy()
+    wandb.log({"sample": wandb.Video(frames_uint8, fps=fps, format="mp4")})
 
 
-def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, clipping=True):
+def train(model, dataloader, 
+          pred2frame=None, 
+          lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, clipping=True,
+          checkpoint_manager=None):
 
     device = model.device
     dtype = model.dtype
@@ -75,6 +79,16 @@ def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay
             lr=lr2, betas=betas, weight_decay=weight_decay),
     ]
     optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
+    # Use CosineAnnealingWarmRestarts with a warmup period by combining with a LambdaLR for linear warmup.
+    # Here, we first do linear warmup for warmup_steps, then cosine annealing
+    warmup_steps = 100
+    def lr_lambda(current_step):
+        if current_step < warmup_steps:
+            return float(current_step) / float(max(1, warmup_steps))
+        # after warmup: cosine annealing from warmup_steps to max_steps
+        progress = float(current_step - warmup_steps) / float(max(1, max_steps - warmup_steps))
+        return 0.5 * (1.0 + math.cos(math.pi * progress))
+    scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
@@ -98,14 +112,37 @@ def train(model, dataloader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay
         vel_pred = model(x_t, actions, ts)
         loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
         wandb.log({"loss": loss.item()})
+        wandb.log({"lr": scheduler.get_last_lr()[0]})
         loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
+        scheduler.step()
         pbar.set_postfix(loss=loss.item())
-        if step % 100 == 0:
-            z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
-            z_sampled = z_sampled.cpu()*std + mean
-            log_video(z_sampled, tag=f"{step:04d}")
+
+        if step % 100 == 0 and pred2frame is not None:
+            checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
+            # compute loss per noise level
+            noise_levels = [1., 0.75, 0.5, 0.25, 0.1, 0]
+            noise_losses = []
+            with t.no_grad():
+                for noise_level in noise_levels:
+                    z = t.randn_like(frames, device=device, dtype=dtype)
+                    x0 = frames
+                    vel_true = x0 - z
+                    ts = noise_level * t.ones(frames.shape[0], frames.shape[1], device=device, dtype=dtype)
+                    x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
+                    vel_pred = model(x_t, actions, ts)
+                    noise_losses.append(F.mse_loss(vel_pred, vel_true, reduction="mean"))
+                    wandb.log({f"noise:{noise_level}": noise_losses[-1].item()})
+
+
+            if frames.shape[1] == 1: 
+                z_sampled = sample(model, t.randn_like(frames[:30].permute(1, 0, 2, 3, 4), device=device, dtype=dtype), actions[:1], num_steps=10)
+            else:
+                z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
+            #z_sampled = z_sampled.cpu()*std + mean
+            frames_sampled = pred2frame(z_sampled)
+            log_video(frames_sampled, tag=f"{step:04d}")
 
     return model

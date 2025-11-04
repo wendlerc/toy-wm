@@ -18,6 +18,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", type=int, default=32)
     parser.add_argument("--duration", type=int, default=1)
     parser.add_argument("--fps", type=int, default=7)
+    parser.add_argument("--in_channels", type=int, default=3)
     parser.add_argument("--n_window", type=int, default=7)
     parser.add_argument("--patch_size", type=int, default=2)
     parser.add_argument("--n_heads", type=int, default=4)
@@ -27,6 +28,7 @@ if __name__ == "__main__":
     parser.add_argument("--noclip", action="store_true")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--bidirectional", action="store_true")
+    parser.add_argument("--nocompile", action="store_true")
     args = parser.parse_args()
 
     wandb.init(project="toy-wm")
@@ -34,6 +36,8 @@ if __name__ == "__main__":
     exp_root = "experiments"
     if not os.path.exists(exp_root):
         os.makedirs(exp_root)
+    if wandb.run.name is None:
+        wandb.run.name = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_dir = os.path.join(exp_root, wandb.run.name)
     os.makedirs(save_dir, exist_ok=True)
     # Detect MPS (Apple Silicon) or CUDA if available
@@ -47,23 +51,31 @@ if __name__ == "__main__":
         device = t.device("cpu")
         print("Using device: CPU")
 
-    loader, _, _ = get_loader(batch_size=args.batch_size, duration=args.duration, fps=args.fps, debug=args.debug) # 7 was the max that does not go oom
+    loader,pred2frame = get_loader(batch_size=args.batch_size, duration=args.duration, fps=args.fps, debug=args.debug) # 7 was the max that does not go oom
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, n_window=args.n_window, patch_size=args.patch_size, n_heads=args.n_heads,d_model=args.d_model, n_blocks=args.n_blocks, T=args.T, bidirectional=args.bidirectional)
+    model = get_model(height, width, 
+                    n_window=args.n_window, 
+                    patch_size=args.patch_size, 
+                    n_heads=args.n_heads,d_model=args.d_model, 
+                    n_blocks=args.n_blocks, 
+                    T=args.T, 
+                    in_channels=args.in_channels,
+                    bidirectional=args.bidirectional)
     model = model.to(device)  # Move model to device
 
     # Apply torch compile for acceleration (PyTorch 2.0+)
-    try:
-        model = t.compile(model)
-        print("Model compiled with torch.compile for acceleration.")
-    except AttributeError:
-        print("torch.compile is not available in this version of PyTorch; running without compilation.")
+    if not args.nocompile:
+        try:
+            model = t.compile(model)
+            print("Model compiled with torch.compile for acceleration.")
+        except AttributeError:
+            print("torch.compile is not available in this version of PyTorch; running without compilation.")
 
     #model = model.to(t.bfloat16)
     # Pass device to train if needed, or make sure trainer and dataloader use device
     # wandb.watch(model, log="all", log_freq=100)  # log_freq reduces logging overhead, log="all" avoids gradient tracking issues
-    model = train(model, loader, 
+    model = train(model, loader, pred2frame=pred2frame,
                   lr1=args.lr1, lr2=args.lr2, betas=args.betas, 
                   weight_decay=args.weight_decay, max_steps=args.max_steps, clipping=~args.noclip)
 

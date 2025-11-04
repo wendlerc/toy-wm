@@ -2,12 +2,34 @@ from .datasets.pong1m import get_loader
 from .models.dit_dforce import get_model
 from .trainers.diffusion_forcing import train
 import wandb
-
+import argparse
+import os
+from datetime import datetime
 import torch as t
+from .config import Config
+from omegaconf import OmegaConf
+from .utils.checkpoint import CheckpointManager
+
 t.set_float32_matmul_precision("high")
 
 if __name__ == "__main__":
-    wandb.init(project="toy-wm")
+    parser = argparse.ArgumentParser()    # 0.002, 3e-5, (0.9, 0.95), 1e-5, 26000 works ok
+    parser.add_argument("--config", type=str, default="configs/config.yaml")
+    args = parser.parse_args()
+
+    cfg = Config.from_yaml(args.config)
+    cmodel = cfg.model
+    ctrain = cfg.train
+
+    wandb.init(project=cfg.wandb.project, name=cfg.wandb.name)
+    wandb.config.update(OmegaConf.to_container(cfg, resolve=True))
+    exp_root = "experiments"
+    if not os.path.exists(exp_root):
+        os.makedirs(exp_root)
+    if wandb.run.name is None:
+        wandb.run.name = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_dir = os.path.join(exp_root, wandb.run.name)
+    os.makedirs(save_dir, exist_ok=True)
     # Detect MPS (Apple Silicon) or CUDA if available
     if t.backends.mps.is_available():
         device = t.device("mps")
@@ -19,37 +41,46 @@ if __name__ == "__main__":
         device = t.device("cpu")
         print("Using device: CPU")
 
-    loader, _, _ = get_loader(batch_size=16, duration=1, fps=12, debug=False)
+    loader,pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
-    model = get_model(height, width, n_window=12, patch_size=3, d_model=64, n_heads=4, n_blocks=4, T=1000)
+    model = get_model(height, width, 
+                    n_window=cmodel.n_window, 
+                    patch_size=cmodel.patch_size, 
+                    n_heads=cmodel.n_heads,d_model=cmodel.d_model, 
+                    n_blocks=cmodel.n_blocks, 
+                    T=cmodel.T, 
+                    in_channels=cmodel.in_channels,
+                    bidirectional=cmodel.bidirectional)
+    if cmodel.checkpoint is not None:
+        print(f"Loading model from {cmodel.checkpoint}")
+        state_dict = t.load(cmodel.checkpoint, weights_only=False)
+        print(f"State dict keys: {list(state_dict.keys())}")
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        elif "model." in list(state_dict.keys())[0]:
+            state_dict = {k.replace("model.", ""): v for k, v in state_dict.items() if k.startswith("model.")}
+        model.load_state_dict(state_dict)
+        print(f"Model loaded from {cmodel.checkpoint}")
+    else:
+        print("No checkpoint found")
     model = model.to(device)  # Move model to device
-
+    model = model.to(t.bfloat16)
     # Apply torch compile for acceleration (PyTorch 2.0+)
-    
-    #try:
-    #    model = t.compile(model)
-    #    print("Model compiled with torch.compile for acceleration.")
-    #except AttributeError:
-    #    print("torch.compile is not available in this version of PyTorch; running without compilation.")
+    if not cmodel.nocompile:
+        try:
+            model = t.compile(model)
+            print("Model compiled with torch.compile for acceleration.")
+        except AttributeError:
+            print("torch.compile is not available in this version of PyTorch; running without compilation.")
 
-    #model = model.to(t.bfloat16)
-    # Pass device to train if needed, or make sure trainer and dataloader use device
-    wandb.watch(model)
-    model = train(model, loader, lr1=0.02, lr2=3e-4, betas=(0.9, 0.98), weight_decay=1e-5, max_steps=26000)
+    wandb.watch(model, log="all", log_freq=100)  # log_freq reduces logging overhead, log="all" avoids gradient tracking issues
+    checkpoint_manager = CheckpointManager(save_dir, k=5, mode="min", metric_name="loss")
 
-    import os
-    from datetime import datetime
-
-    # Create experiments directory if it doesn't exist
-    exp_root = "experiments"
-    if not os.path.exists(exp_root):
-        os.makedirs(exp_root)
-
-    # Create timestamped subdirectory
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = os.path.join(exp_root, timestamp)
-    os.makedirs(save_dir, exist_ok=True)
+    model = train(model, loader, pred2frame=pred2frame,
+                  lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
+                  weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps, 
+                  clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))

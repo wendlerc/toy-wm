@@ -65,7 +65,7 @@ class FrameRoPE(nn.Module):
     def forward(self, key_or_query: Float[Tensor, "batch dur*seq n_head d_head"]):
         x = key_or_query
         # start with doing it for just a single position m  
-        x_perm = t.empty(x.shape, device=x.device) # batch sequence n_head d_head, we perm the last axis
+        x_perm = t.empty(x.shape, dtype=x.dtype, device=x.device) # batch sequence n_head d_head, we perm the last axis
         even = t.arange(0, x.shape[-1], 2)
         odd = t.arange(1, x.shape[-1], 2)
         x_perm[:, :, :, even] = -x[:, :, :, odd]

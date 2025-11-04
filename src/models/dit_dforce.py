@@ -1,7 +1,8 @@
 import torch as t
 from torch import nn
+import torch.nn.functional as F
 
-from ..nn.attn import Attention
+from ..nn.attn import Attention, AttentionSlow
 from ..nn.modulation import AdaLN, Gate
 from ..nn.patch import Patch, UnPatch, PatchCond, UnPatchCond
 from ..nn.geglu import GEGLU
@@ -20,7 +21,12 @@ class CausalBlock(nn.Module):
         self.expansion = expansion
         self.n_heads = n_heads
         self.norm1 = AdaLN(d_model)
-        self.selfattn = Attention(d_model, n_heads, rope=rope)
+        if t.backends.mps.is_available():
+            print("using attention slow")
+            self.selfattn = AttentionSlow(d_model, n_heads, rope=rope)
+        else:
+            print("using attention")
+            self.selfattn = Attention(d_model, n_heads, rope=rope)
         self.gate1 = Gate(d_model)
         self.norm2 = AdaLN(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
@@ -44,7 +50,7 @@ class CausalBlock(nn.Module):
 
 
 class CausalDit(nn.Module):
-    def __init__(self, height, width, n_window, d_model, T=1000, 
+    def __init__(self, height, width, n_window, d_model, T=1000, in_channels=3,
                        patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
                        n_registers=1, n_actions=4, bidirectional=False, debug=False, legacy=False):
         super().__init__()
@@ -62,9 +68,9 @@ class CausalDit(nn.Module):
         self.bidirectional = bidirectional
         self.frame_rope = FrameRoPE(d_model//n_heads, n_window, height//patch_size*width//patch_size + n_registers)
         self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.frame_rope) for _ in range(n_blocks)])
-        self.patch = Patch(out_channels=d_model, patch_size=patch_size)
+        self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
         self.norm = AdaLN(d_model)
-        self.unpatch = UnPatch(height, width, in_channels=d_model, patch_size=patch_size)
+        self.unpatch = UnPatch(height, width, in_channels=d_model, out_channels=in_channels, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
         self.pe_grid = nn.Parameter(t.randn(height//patch_size*width//patch_size, d_model) * 1/d_model**0.5)
@@ -117,11 +123,11 @@ class CausalDit(nn.Module):
     def dtype(self):
         return self.parameters().__next__().dtype
 
-def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False):
-    return CausalDit(height, width, n_window, d_model, T, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional)
+def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3):
+    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional)
 
 if __name__ == "__main__":
-    dit = CausalDit(20, 20, 3, 64, 5, n_blocks=2)
+    dit = CausalDit(20, 20, 100, 64, 5, n_blocks=2)
     z = t.rand((2, 6, 3, 20, 20))
     actions = t.randint(4, (2, 6))
     ts = t.rand((2, 6))
