@@ -4,7 +4,7 @@ model:
   height: 24
   T: 1000
   in_channels: 3
-  n_window: 2
+  n_window: 1
   patch_size: 4
   n_heads: 4
   d_model: 32
