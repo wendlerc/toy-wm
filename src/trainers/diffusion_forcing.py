@@ -144,10 +144,7 @@ def train(model, dataloader,
                 z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
             else:
                 z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
-            #z_sampled = z_sampled.cpu()*std + mean
-            # print(z_sampled.min(), z_sampled.max())
             frames_sampled = pred2frame(z_sampled)
-            #print(frames_sampled.min(), frames_sampled.max())
             log_video(frames_sampled, tag=f"{step:04d}")
 
     return model
