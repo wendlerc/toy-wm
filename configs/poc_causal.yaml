@@ -9,7 +9,7 @@ model:
   n_heads: 8
   d_model: 256
   n_blocks: 10
-  bidirectional: true
+  bidirectional: false
   nocompile: false
   checkpoint: null
 
