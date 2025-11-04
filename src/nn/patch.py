@@ -50,3 +50,31 @@ class Patch(nn.Module): # adapted from https://github.com/cloneofsimo/minRF
         )
         x = x.permute(0, 2, 4, 1, 3, 5).flatten(-3).flatten(1, 2)
         return x
+
+class UnPatch(nn.Module):
+    def __init__(self, height, width, in_channels=64, out_channels=3, patch_size=2):
+        super().__init__()
+        self.width = width
+        self.height = height
+        self.patch_size = patch_size
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.unpatch = nn.Linear(in_channels, out_channels*patch_size**2)
+
+    def forward(self, x):
+        x = self.unpatch(x)
+        batch, dur, seq, d = x.shape
+        x = x.reshape(-1, seq, d)
+        x = self.unpatchify(x)
+        x = x.reshape(batch, dur, self.out_channels, self.height, self.width)
+        return x
+    
+    def unpatchify(self, x):
+        c = self.out_channels
+        p = self.patch_size
+        h = self.height // p
+        w = self.width // p
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
+        x = t.einsum("nhwpqc->nchpwq", x)
+        imgs = x.reshape(shape=(x.shape[0], c, h * p, w * p))
+        return imgs
