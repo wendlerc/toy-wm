@@ -11,6 +11,31 @@ import torch
 from torch import nn
 
 
+def load_model_from_config(config_path: str, checkpoint_path: str = None) -> nn.Module:
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+    cmodel = config.model
+    model = get_model(cmodel.height, cmodel.width, 
+                    n_window=cmodel.n_window, 
+                    patch_size=cmodel.patch_size, 
+                    n_heads=cmodel.n_heads,d_model=cmodel.d_model, 
+                    n_blocks=cmodel.n_blocks, 
+                    T=cmodel.T, 
+                    in_channels=cmodel.in_channels,
+                    bidirectional=cmodel.bidirectional)
+    if checkpoint_path is None and cmodel.checkpoint is not None:
+        checkpoint_path = cmodel.checkpoint
+    if checkpoint_path is not None:
+        state_dict = t.load(checkpoint_path, weights_only=False)
+        if "model" in state_dict:
+            state_dict = state_dict["model"]
+        elif "model." in list(state_dict.keys())[0]:
+            state_dict = {k.replace("model.", ""): v for k, v in state_dict.items() if k.startswith("model.")}
+        model.load_state_dict(state_dict)
+    return model
+
+    
+
 class CheckpointManager:
     """
     Manage top-K checkpoints by a metric. On each save:
