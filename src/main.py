@@ -44,6 +44,7 @@ if __name__ == "__main__":
     loader,pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
+    frame_rope = cmodel.frame_rope if "frame_rope" in cmodel else False
     model = get_model(height, width, 
                     n_window=cmodel.n_window, 
                     patch_size=cmodel.patch_size, 
@@ -51,13 +52,14 @@ if __name__ == "__main__":
                     n_blocks=cmodel.n_blocks, 
                     T=cmodel.T, 
                     in_channels=cmodel.in_channels,
-                    bidirectional=cmodel.bidirectional)
+                    bidirectional=cmodel.bidirectional,
+                    frame_rope=frame_rope)
     if cmodel.checkpoint is not None:
         print(f"Loading model from {cmodel.checkpoint}")
         state_dict = t.load(cmodel.checkpoint, weights_only=False)
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        elif "_orig_mod." in list(state_dict.keys())[0]:
+        if "_orig_mod." in list(state_dict.keys())[0]:
             state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items() if k.startswith("_orig_mod.")}
         model.load_state_dict(state_dict)
         print(f"Model loaded from {cmodel.checkpoint}")
