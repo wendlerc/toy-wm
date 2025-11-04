@@ -139,8 +139,9 @@ def train(model, dataloader,
 
             if frames.shape[1] == 1: 
                 z_sampled = sample(model, 
-                                   t.randn_like(frames[:30].permute(1, 0, 2, 3, 4), device=device, dtype=dtype), 
-                                   t.tensor([[0]*30],dtype=t.int32,device=device), num_steps=10)
+                                   t.randn_like(frames[:30], device=device, dtype=dtype), 
+                                   actions[:30], num_steps=10)
+                z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
             else:
                 z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             #z_sampled = z_sampled.cpu()*std + mean

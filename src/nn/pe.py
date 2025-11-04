@@ -27,11 +27,11 @@ class NumericEncoding(nn.Module):
 
 
 class RoPE(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, d_head, n_ctx, C=10000):
         super().__init__()
-        thetas = t.exp(-math.log(cfg.C)*t.arange(0,cfg.d_head,2)/cfg.d_head)
+        thetas = t.exp(-math.log(C)*t.arange(0,d_head,2)/d_head)
         thetas = thetas.repeat([2,1]).T.flatten()
-        positions = t.arange(cfg.n_ctx)
+        positions = t.arange(n_ctx)
         all_thetas = positions.unsqueeze(1)*thetas.unsqueeze(0)
         sins = t.sin(all_thetas)
         coss = t.cos(all_thetas)
@@ -46,6 +46,8 @@ class RoPE(nn.Module):
         odd = t.arange(1, x.shape[-1],2)
         x_perm[:, :, :, even] = -x[:, :, :, odd]
         x_perm[:, :, :, odd] = x[:, :, :, even]
+        print(x.shape, x_perm.shape)
+        print(self.coss.shape, self.sins.shape)
         return self.coss[:,:x.shape[1]]*x + self.sins[:,:x.shape[1]]*x_perm
 
 

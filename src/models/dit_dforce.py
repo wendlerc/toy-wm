@@ -6,7 +6,7 @@ from ..nn.attn import Attention, AttentionSlow
 from ..nn.modulation import AdaLN, Gate
 from ..nn.patch import Patch, UnPatch, PatchCond, UnPatchCond
 from ..nn.geglu import GEGLU
-from ..nn.pe import FrameRoPE, NumericEncoding
+from ..nn.pe import FrameRoPE, NumericEncoding, RoPE
 from jaxtyping import Float, Bool, Int
 from torch import Tensor
 from typing import Optional
@@ -64,14 +64,14 @@ class CausalDit(nn.Module):
         self.debug = debug
         self.legacy = legacy
         self.bidirectional = bidirectional
-        self.frame_rope = FrameRoPE(d_model//n_heads, n_window, height//patch_size*width//patch_size + n_registers)
-        self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.frame_rope) for _ in range(n_blocks)])
+        self.toks_per_frame = height//patch_size*width//patch_size + n_registers
+        self.rope_seq = RoPE(d_model//n_heads, self.n_window*self.toks_per_frame)
+        self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.rope_seq) for _ in range(n_blocks)])
         self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
         self.norm = AdaLN(d_model)
         self.unpatch = UnPatch(height, width, in_channels=d_model, out_channels=in_channels, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
-        self.pe_grid = nn.Parameter(t.randn(height//patch_size*width//patch_size, d_model) * 1/d_model**0.5)
         self.time_emb = NumericEncoding(dim=d_model, n_max=T)
         self.time_emb_mixer = nn.Linear(d_model, d_model)
     
@@ -88,7 +88,6 @@ class CausalDit(nn.Module):
         cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
 
         z = self.patch(z) # batch dur seq d
-        z += self.pe_grid[None, None]
 
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers

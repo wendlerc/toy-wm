@@ -5,9 +5,9 @@ model:
   T: 1000
   in_channels: 3
   n_window: 1
-  patch_size: 4
-  n_heads: 4
-  d_model: 32
+  patch_size: 2
+  n_heads: 8
+  d_model: 256
   n_blocks: 2
   bidirectional: true
   nocompile: true
