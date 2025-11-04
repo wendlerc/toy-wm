@@ -11,7 +11,7 @@ model:
   n_blocks: 4
   bidirectional: true
   nocompile: true
-  checkpoint: null
+  checkpoint: "experiments/genial-lion-347/ckpt-step=004900-metric=0.06114923.pt"
 
 train:
   lr1: 0.02
@@ -22,7 +22,7 @@ train:
   batch_size: 32
   noclip: false
   duration: 1
-  fps: 4
+  fps: 1
   in_channels: 3
   debug: false
 
