@@ -22,10 +22,8 @@ class CausalBlock(nn.Module):
         self.n_heads = n_heads
         self.norm1 = AdaLN(d_model)
         if t.backends.mps.is_available():
-            print("using attention slow")
             self.selfattn = AttentionSlow(d_model, n_heads, rope=rope)
         else:
-            print("using attention")
             self.selfattn = Attention(d_model, n_heads, rope=rope)
         self.gate1 = Gate(d_model)
         self.norm2 = AdaLN(d_model)

@@ -39,7 +39,6 @@ class Attention(nn.Module):
         k_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None, 
         v_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None,
     ) -> Float[Tensor, "batch posq d_model"]:
-        print('hello')
         assert (k_cache is None and v_cache is None) or (k_cache is not None and v_cache is not None), "k_cache and v_cache go together."
         d_head = self.d_head
         if k_cache is not None and v_cache is not None:
@@ -58,8 +57,32 @@ class Attention(nn.Module):
         if self.rope is not None:
             q = self.rope(q)
             k = self.rope(k)
-        z = flex_attention(q.permute(0, 2, 1, 3), 
-                                  k.permute(0, 2, 1, 3), v.permute(0, 2, 1, 3)).permute(0, 2, 1, 3)
+        
+        # Convert to (batch, num_heads, seq_len, head_dim) format for flex_attention
+        q_perm = q.permute(0, 2, 1, 3)  # (batch, n_heads, posq, d_head)
+        k_perm = k.permute(0, 2, 1, 3)   # (batch, n_heads, posk, d_head)
+        v_perm = v.permute(0, 2, 1, 3)   # (batch, n_heads, posk, d_head)
+        
+        # Ensure tensors are contiguous to avoid flex_attention indexing bugs
+        q_perm = q_perm.contiguous()
+        k_perm = k_perm.contiguous()
+        v_perm = v_perm.contiguous()
+        
+        # Handle mask using score_mod if needed
+        if mask is not None:
+            # Store mask and IGNORE for use in score_mod closure
+            mask_tensor = mask  # (posq, posk)
+            ignore_val = self.IGNORE
+            def score_mod(score, q, k, v, b, h):
+                # score shape: (batch, num_heads, seq_q, seq_k)
+                # Apply mask: where mask is True, set to -inf
+                mask_expanded = mask_tensor[None, None, :, :]  # (1, 1, posq, posk)
+                return t.where(mask_expanded, ignore_val, score)
+            z = flex_attention(q_perm, k_perm, v_perm, score_mod=score_mod)
+        else:
+            z = flex_attention(q_perm, k_perm, v_perm)
+        
+        z = z.permute(0, 2, 1, 3)  # Back to (batch, posq, n_heads, d_head)
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
         out = out.sum(dim=2) + self.b_O
         #print(f"out {out.shape}, attention {probas.shape}, q {q.shape}, k {k.shape}, v {v.shape}")

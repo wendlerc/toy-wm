@@ -55,11 +55,10 @@ if __name__ == "__main__":
     if cmodel.checkpoint is not None:
         print(f"Loading model from {cmodel.checkpoint}")
         state_dict = t.load(cmodel.checkpoint, weights_only=False)
-        print(f"State dict keys: {list(state_dict.keys())}")
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        elif "model." in list(state_dict.keys())[0]:
-            state_dict = {k.replace("model.", ""): v for k, v in state_dict.items() if k.startswith("model.")}
+        elif "_orig_mod." in list(state_dict.keys())[0]:
+            state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items() if k.startswith("_orig_mod.")}
         model.load_state_dict(state_dict)
         print(f"Model loaded from {cmodel.checkpoint}")
     else:
