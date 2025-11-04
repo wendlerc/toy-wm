@@ -9,7 +9,7 @@ model:
   n_heads: 4
   d_model: 64
   n_blocks: 12
-  bidirectional: true
+  bidirectional: false
   nocompile: false
   checkpoint: "experiments/olive-glade-151/model.pt"
 
@@ -27,6 +27,6 @@ train:
   debug: false
 
 wandb:
-  name: "toy-wm"
-  project: null
+  name: null
+  project: "toy-wm"
   run_name: null

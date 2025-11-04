@@ -73,11 +73,12 @@ class Attention(nn.Module):
             # Store mask and IGNORE for use in score_mod closure
             mask_tensor = mask  # (posq, posk)
             ignore_val = self.IGNORE
-            def score_mod(score, q, k, v, b, h):
-                # score shape: (batch, num_heads, seq_q, seq_k)
+            def score_mod(score, b, h, q_idx, kv_idx):
+                # score_mod operates on individual scalar scores
                 # Apply mask: where mask is True, set to -inf
-                mask_expanded = mask_tensor[None, None, :, :]  # (1, 1, posq, posk)
-                return t.where(mask_expanded, ignore_val, score)
+                # Use torch ops that work in compiled context
+                mask_val = mask_tensor[q_idx, kv_idx]
+                return t.where(mask_val, ignore_val, score)
             z = flex_attention(q_perm, k_perm, v_perm, score_mod=score_mod)
         else:
             z = flex_attention(q_perm, k_perm, v_perm)
