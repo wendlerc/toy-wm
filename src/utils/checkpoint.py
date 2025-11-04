@@ -7,14 +7,19 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Optional, Dict, Any, List
 
-import torch
+import torch as t 
 from torch import nn
+
+from ..models.dit_dforce import get_model
+from ..config import Config
+
+import yaml
 
 
 def load_model_from_config(config_path: str, checkpoint_path: str = None) -> nn.Module:
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
-    cmodel = config.model
+    cmodel = Config.from_yaml(config_path).model
     model = get_model(cmodel.height, cmodel.width, 
                     n_window=cmodel.n_window, 
                     patch_size=cmodel.patch_size, 
@@ -29,8 +34,8 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None) -> nn.
         state_dict = t.load(checkpoint_path, weights_only=False)
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        elif "model." in list(state_dict.keys())[0]:
-            state_dict = {k.replace("model.", ""): v for k, v in state_dict.items() if k.startswith("model.")}
+        elif "_orig_mod." in list(state_dict.keys())[0]:
+            state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items() if k.startswith("_orig_mod.")}
         model.load_state_dict(state_dict)
     return model
 
@@ -98,7 +103,7 @@ class CheckpointManager:
         metric: float,
         step: int,
         model: Optional[nn.Module] = None,
-        optimizer: Optional[torch.optim.Optimizer] = None,
+        optimizer: Optional[t.optim.Optimizer] = None,
         scheduler: Optional[Any] = None,
         extra: Optional[Dict[str, Any]] = None,
         state_dict: Optional[Dict[str, Any]] = None,
@@ -150,7 +155,7 @@ class CheckpointManager:
         with NamedTemporaryFile(dir=self.dir, delete=False) as tmp:
             tmp_path = Path(tmp.name)
         try:
-            torch.save(payload, tmp_path)
+            t.save(payload, tmp_path)
             os.replace(tmp_path, fpath)  # atomic on POSIX
         finally:
             if tmp_path.exists():
@@ -263,11 +268,11 @@ if __name__ == "__main__":
     mgr = CheckpointManager("checkpoints", k=5, mode="max", metric_name="val_acc")
 
     model = nn.Linear(10, 2)
-    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    opt = t.optim.AdamW(model.parameters(), lr=1e-3)
 
     # Fake loop
     for epoch in range(10):
-        metric = 0.5 + 0.1 * torch.rand(1).item()  # pretend validation accuracy
+        metric = 0.5 + 0.1 * t.rand(1).item()  # pretend validation accuracy
         info = mgr.save(metric=metric, step=epoch, model=model, optimizer=opt)
         print(
             f"epoch {epoch:02d} metric={metric:.4f} saved={info['saved']} kept={info['kept']} "
