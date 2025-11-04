@@ -46,8 +46,6 @@ class RoPE(nn.Module):
         odd = t.arange(1, x.shape[-1],2)
         x_perm[:, :, :, even] = -x[:, :, :, odd]
         x_perm[:, :, :, odd] = x[:, :, :, even]
-        print(x.shape, x_perm.shape)
-        print(self.coss.shape, self.sins.shape)
         return self.coss[:,:x.shape[1]]*x + self.sins[:,:x.shape[1]]*x_perm
 
 
