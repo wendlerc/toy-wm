@@ -64,7 +64,7 @@ if __name__ == "__main__":
     else:
         print("No checkpoint found")
     model = model.to(device)  # Move model to device
-    model = model.to(t.bfloat16)
+    #model = model.to(t.bfloat16)
     # Apply torch compile for acceleration (PyTorch 2.0+)
     if not cmodel.nocompile:
         try:

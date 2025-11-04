@@ -103,7 +103,6 @@ class CausalDit(nn.Module):
             zr = block(zr, cond, mask_self)
         zr = self.norm(zr, cond)
         zr = zr.reshape(batch, durzr, seqzr, d)
-
         out = self.unpatch(zr[:, :, :-self.n_registers])
         return out # batch dur channels height width
     

@@ -17,6 +17,7 @@ dependencies = [
     "pip>=25.3",
     "pyyaml>=6.0.3",
     "torch>=2.9.0",
+    "torchvision>=0.24.0",
     "tqdm>=4.67.1",
     "wandb[media]>=0.22.3",
 ]

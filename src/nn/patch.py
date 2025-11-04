@@ -1,8 +1,71 @@
 from torch import nn
 from .modulation import AdaLN
+from einops import rearrange
+import torch as t
 
+class Patch(nn.Module): # from simonryu's minRF repo
+    def __init__(self, in_channels=3, out_channels=64, patch_size=2):
+        super().__init__()
+        self.patch_size = patch_size
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        dim = out_channels
+        if dim % 32 == 0 and dim > 32:
+            self.init_conv_seq = nn.Sequential(
+                nn.Conv2d(in_channels, dim // 2, kernel_size=5, padding=2, stride=1),
+                nn.SiLU(),
+                nn.GroupNorm(32, dim // 2),
+                nn.Conv2d(dim // 2, dim // 2, kernel_size=5, padding=2, stride=1),
+                nn.SiLU(),
+                nn.GroupNorm(32, dim // 2),
+            )
+        else:
+            self.init_conv_seq = nn.Sequential(
+                nn.Conv2d(in_channels, dim // 2, kernel_size=5, padding=2, stride=1),
+                nn.SiLU(),
+                nn.Conv2d(dim // 2, dim // 2, kernel_size=5, padding=2, stride=1),
+                nn.SiLU(),
+            )
 
-class Patch(nn.Module):
+        self.x_embedder = nn.Linear(patch_size * patch_size * dim // 2, dim, bias=True)
+        nn.init.constant_(self.x_embedder.bias, 0)
+
+    def forward(self, x):
+        batch, dur, c, h, w = x.shape
+        #print(x.shape)
+        #a = x[0,0]
+        #b = x[1,0]
+        x = x.reshape(-1, c, h, w)
+        #x = rearrange(x, "b t c h w -> (b t) c h w")
+        #a1 = x[0]
+        #b1 = x[dur]
+        x = self.init_conv_seq(x)
+        x = self.patchify(x)
+        x = self.x_embedder(x)
+        # we might break things again with to carelessly reshaping
+        #print(x.shape)
+        #a1 = x[0]
+        #b1 = x[dur]
+        x = x.reshape(batch, dur, -1, self.out_channels)
+        #a = x[0,0]
+        #b = x[1,0]
+        #print("n_seq", h//self.patch_size * w//self.patch_size)
+        return x
+
+    def patchify(self, x):
+        B, C, H, W = x.size()
+        x = x.view(
+            B,
+            C,
+            H // self.patch_size,
+            self.patch_size,
+            W // self.patch_size,
+            self.patch_size,
+        )
+        x = x.permute(0, 2, 4, 1, 3, 5).flatten(-3).flatten(1, 2)
+        return x
+
+class PatchDeprecated(nn.Module):
     def __init__(self, in_channels=3, out_channels=64, patch_size=2):
         super().__init__()
         self.patch_size = patch_size
@@ -38,10 +101,20 @@ class UnPatch(nn.Module):
     def forward(self, x):
         x = self.unpatch(x)
         batch, dur, seq, d = x.shape
-        x = x.reshape(batch, dur, seq*self.patch_size**2, self.out_channels)
-        x = x.permute(0, 1, 3, 2)
+        x = x.reshape(-1, seq, d)
+        x = self.unpatchify(x)
         x = x.reshape(batch, dur, self.out_channels, self.height, self.width)
         return x
+    
+    def unpatchify(self, x):
+        c = self.out_channels
+        p = self.patch_size
+        h = self.height // p
+        w = self.width // p
+        x = x.reshape(shape=(x.shape[0], h, w, p, p, c))
+        x = t.einsum("nhwpqc->nchpwq", x)
+        imgs = x.reshape(shape=(x.shape[0], c, h * p, w * p))
+        return imgs
 
 
 class PatchCond(nn.Module):

@@ -21,7 +21,7 @@ def z2frame(y, lam=1e-6, mean=mean, std=std):
     frames = (y.clamp(0, 1) * 255.0).round().byte()
     return frames
 
-def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False, mode="z", mean=mean, std=std):
+def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False, mode="-1,1", mean=mean, std=std, drop_duration=False):
     frames = t.from_numpy(np.load("./datasets/pong1M/frames.npy"))
     actions = t.from_numpy(np.load("./datasets/pong1M/actions.npy"))
     height, width, channels = frames.shape[-3:]
@@ -53,7 +53,10 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False, mod
         frames = 0*frames + firstf[None]
         actions = 0*actions + firsta[None]
         frames = 0*frames + frames[:,0].unsqueeze(1)
-    dataset = TensorDataset(frames, actions)
+    if drop_duration:
+        dataset = TensorDataset(frames[:, 0], actions[:,0]*0)
+    else:
+        dataset = TensorDataset(frames, actions)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
     print(f"{frames.shape[0]//batch_size} batches")
     return loader, pred2frame
