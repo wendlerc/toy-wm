@@ -4,14 +4,15 @@ model:
   height: 24
   T: 1000
   in_channels: 3
-  n_window: 16
+  n_window: 30
   patch_size: 4
-  n_heads: 4
+  n_heads: 8
   d_model: 128
-  n_blocks: 6
-  bidirectional: false
+  n_blocks: 8
+  bidirectional: true
   nocompile: false
   checkpoint: null
+  frame_rope: true
 
 train:
   lr1: 0.002
@@ -22,10 +23,10 @@ train:
   batch_size: 64
   noclip: false
   duration: 1
-  fps: 16
+  fps: 1
   debug: false
 
 wandb:
   name: null
   project: "toy-wm"
-  run_name: "causal-layers6-heads4-d128"
+  run_name: "bidirectional-layers6-heads4-d128"

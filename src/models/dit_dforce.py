@@ -26,7 +26,7 @@ class CausalBlock(nn.Module):
         if t.backends.mps.is_available():
             self.selfattn = AttentionSlow(d_model, n_heads, rope=rope)
         else:
-            self.selfattn = Attention(d_model, n_heads, rope=rope)
+            self.selfattn = AttentionSlow(d_model, n_heads, rope=rope) # there is a problem with flexattn i think
         self.norm2 = nn.LayerNorm(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
         
@@ -54,7 +54,10 @@ class CausalBlock(nn.Module):
 class CausalDit(nn.Module):
     def __init__(self, height, width, n_window, d_model, T=1000, in_channels=3,
                        patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
-                       n_registers=1, n_actions=4, bidirectional=False, debug=False, legacy=False):
+                       n_registers=1, n_actions=4, bidirectional=False, 
+                       debug=False, 
+                       legacy=False,
+                       frame_rope=False):
         super().__init__()
         self.height = height
         self.width = width
@@ -68,8 +71,16 @@ class CausalDit(nn.Module):
         self.debug = debug
         self.legacy = legacy
         self.bidirectional = bidirectional
-        self.toks_per_frame = height//patch_size*width//patch_size + n_registers
-        self.rope_seq = RoPE(d_model//n_heads, self.n_window*self.toks_per_frame)
+        self.frame_rope = frame_rope
+        self.toks_per_frame = (height//patch_size)*(width//patch_size) + n_registers
+        if frame_rope:
+            print("Using frame rope")
+            print(self.toks_per_frame)
+            self.rope_seq = FrameRoPE(d_model//n_heads, self.n_window, self.toks_per_frame)
+            self.grid_pe = nn.Parameter(t.randn(self.toks_per_frame - n_registers, d_model) * 1/d_model**0.5)
+        else:
+            self.rope_seq = RoPE(d_model//n_heads, self.n_window*self.toks_per_frame)
+            self.grid_pe = None
         self.blocks = nn.ModuleList([CausalBlock(d_model, expansion, n_heads, rope=self.rope_seq) for _ in range(n_blocks)])
         self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
         self.norm = nn.LayerNorm(d_model)
@@ -105,7 +116,8 @@ class CausalDit(nn.Module):
         #print(ts_scaled.shape, a.shape, cond.shape, actions.shape)
         cond = cond.repeat_interleave(self.toks_per_frame, dim=1)
         z = self.patch(z) # batch dur seq d
-
+        if self.grid_pe is not None:
+            z = z + self.grid_pe[None, None]
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
         if self.bidirectional:
@@ -138,8 +150,8 @@ class CausalDit(nn.Module):
     def dtype(self):
         return self.parameters().__next__().dtype
 
-def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3):
-    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional)
+def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, frame_rope=False):
+    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, frame_rope=frame_rope)
 
 if __name__ == "__main__":
     dit = CausalDit(20, 20, 100, 64, 5, n_blocks=2)
