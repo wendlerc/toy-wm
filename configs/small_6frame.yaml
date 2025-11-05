@@ -11,7 +11,8 @@ model:
   n_blocks: 4
   bidirectional: true
   nocompile: true
-  checkpoint: "experiments/genial-lion-347/ckpt-step=004900-metric=0.06114923.pt"
+  checkpoint: "experiments/royal-bee-350/ckpt-step=004900-metric=0.02995418.pt"
+  #checkpoint: "experiments/genial-lion-347/ckpt-step=004900-metric=0.06114923.pt"
 
 train:
   lr1: 0.02
