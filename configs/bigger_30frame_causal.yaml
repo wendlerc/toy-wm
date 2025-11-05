@@ -10,9 +10,9 @@ model:
   d_model: 384
   n_blocks: 8
   C: 5000
-  bidirectional: true
+  bidirectional: false
   nocompile: false
-  checkpoint: "experiments/frosty-sunset-395/ckpt-step=001200-metric=0.00275456.pt"
+  checkpoint: "experiments/frosty-sunset-395/ckpt-step=002100-metric=0.00160125.pt"
   #checkpoint: "experiments/vivid-sea-390/ckpt-step=000700-metric=0.01958773.pt"
 
 train:
@@ -30,4 +30,4 @@ train:
 wandb:
   name: null
   project: "toy-wm"
-  run_name: "bidirectional-layers8-heads12-d384"
+  run_name: "causal-layers8-heads12-d384"
