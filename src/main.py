@@ -45,6 +45,7 @@ if __name__ == "__main__":
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
     frame_rope = cmodel.frame_rope if "frame_rope" in cmodel else False
+    C = cmodel.C if "C" in cmodel else 10000
     model = get_model(height, width, 
                     n_window=cmodel.n_window, 
                     patch_size=cmodel.patch_size, 
@@ -66,7 +67,7 @@ if __name__ == "__main__":
     else:
         print("No checkpoint found")
     model = model.to(device)  # Move model to device
-    #model = model.to(t.bfloat16)
+    model = model.to(t.float32)
     # Apply torch compile for acceleration (PyTorch 2.0+)
     if not cmodel.nocompile:
         try:
