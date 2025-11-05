@@ -94,7 +94,7 @@ class Attention(nn.Module):
             ):
                 z = F.scaled_dot_product_attention(
                     q_perm, k_perm, v_perm,
-                    attn_mask = mask.logical_not(),
+                    attn_mask = mask.logical_not() if mask is not None else None,
                     dropout_p = 0.0, 
                     is_causal = False, 
                     scale = 1/d_head**0.5
