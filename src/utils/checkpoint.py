@@ -17,8 +17,7 @@ import yaml
 
 
 def load_model_from_config(config_path: str, checkpoint_path: str = None) -> nn.Module:
-    with open(config_path, "r") as f:
-        config = yaml.safe_load(f)
+    print(f"loading {config_path}")
     cmodel = Config.from_yaml(config_path).model
     model = get_model(cmodel.height, cmodel.width, 
                     n_window=cmodel.n_window, 
@@ -34,7 +33,7 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None) -> nn.
         state_dict = t.load(checkpoint_path, weights_only=False)
         if "model" in state_dict:
             state_dict = state_dict["model"]
-        elif "_orig_mod." in list(state_dict.keys())[0]:
+        if "_orig_mod." in list(state_dict.keys())[0]:
             state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items() if k.startswith("_orig_mod.")}
         model.load_state_dict(state_dict)
     return model

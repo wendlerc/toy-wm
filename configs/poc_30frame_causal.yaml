@@ -11,7 +11,8 @@ model:
   n_blocks: 6
   bidirectional: false
   nocompile: false
-  checkpoint: null
+  checkpoint: "experiments/usual-darkness-368/ckpt-step=047400-metric=0.01078635.pt"
+  #checkpoint: "experiments/glad-fire-362/ckpt-step=002600-metric=0.05778494.pt"
 
 train:
   lr1: 0.002
@@ -22,7 +23,7 @@ train:
   batch_size: 32
   noclip: false
   duration: 1
-  fps: 1
+  fps: 30
   debug: false
 
 wandb:
