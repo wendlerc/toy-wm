@@ -1,4 +1,5 @@
 from torch import nn
+from torch.nn import functional as F
 import torch as t
 import einops 
 from jaxtyping import Float, Bool
@@ -7,10 +8,11 @@ from typing import Optional
 from torch.nn.attention.flex_attention import flex_attention
 
 
+
 class Attention(nn.Module):
     IGNORE: Float[Tensor, ""]
 
-    def __init__(self, d_model, n_heads, rope=None):
+    def __init__(self, d_model, n_heads, rope=None, use_flex_attention=False):
         super().__init__()
         assert d_model % n_heads == 0, f"{d_model} must be divisble by {n_heads}"
         self.d_head = d_model // n_heads
@@ -27,8 +29,9 @@ class Attention(nn.Module):
         nn.init.normal_(self.W_K, 1/d_model**0.5)
         nn.init.normal_(self.W_V, 1/d_model**0.5)
         nn.init.normal_(self.W_O, 1/d_head**0.5)
-        self.register_buffer("IGNORE", t.tensor(-1e5, dtype=t.float32))
+        self.register_buffer("IGNORE", t.tensor(float('-inf'), dtype=t.float32))
         self.rope = rope
+        self.use_flex_attention = use_flex_attention
 
 
     def forward(
@@ -68,22 +71,34 @@ class Attention(nn.Module):
         k_perm = k_perm.contiguous()
         v_perm = v_perm.contiguous()
         
-        print(f"q_perm {q_perm.shape}, k_perm {k_perm.shape}, v_perm {v_perm.shape}")
-        # Handle mask using score_mod if needed
-        if mask is not None:
-            # Store mask and IGNORE for use in score_mod closure
-            mask_tensor = mask  # (posq, posk)
-            ignore_val = self.IGNORE
-            def score_mod(score, b, h, q_idx, kv_idx):
-                # score_mod operates on individual scalar scores
-                # Apply mask: where mask is True, set to -inf
-                # Use torch ops that work in compiled context
-                mask_val = mask_tensor[q_idx, kv_idx]
-                return t.where(mask_val, ignore_val, score)
-            z = flex_attention(q_perm, k_perm, v_perm, score_mod=score_mod)
+        if self.use_flex_attention:
+            # Handle mask using score_mod if needed
+            if mask is not None:
+                # Store mask and IGNORE for use in score_mod closure
+                mask_tensor = mask  # (posq, posk)
+                ignore_val = self.IGNORE
+                def score_mod(score, b, h, q_idx, kv_idx):
+                    # score_mod operates on individual scalar scores
+                    # Apply mask: where mask is True, set to -inf
+                    # Use torch ops that work in compiled context
+                    mask_val = mask_tensor[q_idx, kv_idx]
+                    return t.where(mask_val, ignore_val, score)
+                z = flex_attention(q_perm, k_perm, v_perm, score_mod=score_mod)
+            else:
+                z = flex_attention(q_perm, k_perm, v_perm)
         else:
-            z = flex_attention(q_perm, k_perm, v_perm)
-        print(f"z {z.shape}")
+            with t.backends.cuda.sdp_kernel(
+                enable_flash=True, 
+                enable_math=False, 
+                enable_mem_efficient=False
+            ):
+                z = F.scaled_dot_product_attention(
+                    q_perm, k_perm, v_perm,
+                    attn_mask = mask.logical_not(),
+                    dropout_p = 0.0, 
+                    is_causal = False, 
+                    scale = 1/d_head**0.5
+                )
         z = z.permute(0, 2, 1, 3)  # Back to (batch, posq, n_heads, d_head)
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
         out = out.sum(dim=2) + self.b_O
@@ -110,7 +125,7 @@ class AttentionSlow(nn.Module):
         nn.init.normal_(self.W_K, 1/d_model**0.5)
         nn.init.normal_(self.W_V, 1/d_model**0.5)
         nn.init.normal_(self.W_O, 1/d_head**0.5)
-        self.register_buffer("IGNORE", t.tensor(-1e5, dtype=t.float32))
+        self.register_buffer("IGNORE", t.tensor(float('-inf'), dtype=t.float32))
         self.rope = rope
 
 
@@ -153,15 +168,28 @@ class AttentionSlow(nn.Module):
 
 
 if __name__ == "__main__":
-    attn_slow = AttentionSlow(d_model=256, n_heads=8)
-    attn = Attention(d_model=256, n_heads=8)
+    from .pe import RoPE
+    import inspect
+    rope = RoPE(256//8, 10000)
+    dtype = t.float32
+    rope = rope.to(dtype)
+    attn_slow = AttentionSlow(d_model=256, n_heads=8, rope=rope)
+    attn = Attention(d_model=256, n_heads=8, rope=rope)
     attn.load_state_dict(attn_slow.state_dict())
-    attn.double()
-    attn_slow.double()
-    x = t.randn(1, 1000, 256, dtype=t.float64)*10
+    attn.to(dtype)
+    attn_slow.to(dtype)
+    x = t.randn(1, 1000, 256, dtype=dtype)*10
+    xkv = t.randn(1, 1000, 256, dtype=dtype)*10
     mask = t.randint(0, 2, (1000, 1000), dtype=t.bool)
-    y, z, _ = attn(x, x, mask=mask)
-    y_slow, z_slow, _ = attn_slow(x, x, mask=mask)
+    y, z, _ = attn(x, xkv, mask=mask)
+    y_slow, z_slow, _ = attn_slow(x, xkv, mask=mask)
     assert t.allclose(z, z_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(z - z_slow).abs().max()}"
     assert t.allclose(y, y_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(y - y_slow).abs().max()}"
     print("Attention and AttentionSlow are the same")
+
+    loss = t.nn.functional.mse_loss(y, y_slow)
+    loss.backward()
+    for n, p in attn.named_parameters():
+        print(n, p.grad.shape)
+    for n, p in attn_slow.named_parameters():
+        print(n, p.grad.shape)

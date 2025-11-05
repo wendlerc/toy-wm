@@ -107,6 +107,8 @@ def train(model, dataloader,
         actions = actions.to(device)
         actions[:, 1:] = actions[:, :-1] + 1
         actions[:, 0] = 0
+        mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
+        actions[mask] = 0
 
         z = t.randn_like(frames, device=device, dtype=dtype)
         x0 = frames

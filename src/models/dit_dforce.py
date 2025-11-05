@@ -26,7 +26,7 @@ class CausalBlock(nn.Module):
         if t.backends.mps.is_available():
             self.selfattn = AttentionSlow(d_model, n_heads, rope=rope)
         else:
-            self.selfattn = AttentionSlow(d_model, n_heads, rope=rope) # there is a problem with flexattn i think
+            self.selfattn = Attention(d_model, n_heads, rope=rope) # there is a problem with flexattn i think
         self.norm2 = nn.LayerNorm(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
         
