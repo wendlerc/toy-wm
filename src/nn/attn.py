@@ -41,8 +41,8 @@ class KVCache(nn.Module):
             local_loc -= keys.shape[1]
             assert local_loc >= 0, f"the cache update {keys.shape[1]} was larger than the cache {self.size}, that's not supported for now."
             assert local_loc % self.toks_per_frame == 0, f"the number of elements in the cache {local_loc} must be a multiple of the number of tokens per frame {self.toks_per_frame}"
-            self.keys[layer_idx, :, :local_loc] = self.keys[layer_idx, :, -local_loc:]
-            self.values[layer_idx, :, :local_loc] = self.values[layer_idx, :, -local_loc:]
+            self.keys[layer_idx, :, :local_loc] = self.keys[layer_idx, :, -local_loc:].clone()
+            self.values[layer_idx, :, :local_loc] = self.values[layer_idx, :, -local_loc:].clone()
 
         assert local_loc + keys.shape[1] <= self.size, f"{local_loc + keys.shape[1]} out of bounds {self.size}"
         self.keys[layer_idx, :, local_loc:local_loc + keys.shape[1]] = keys
@@ -131,9 +131,7 @@ class AttentionEinOps(nn.Module):
         k = self.ln2(k) # this leanrs much faster using layernorm here
 
         attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
-        print(attention.shape, q.shape, k.shape)
         if mask is not None:
-            print(mask.shape)
             attention = t.where(mask[:q.shape[1], :k.shape[1]], self.IGNORE, attention)
         probas = attention.softmax(dim=3)
         z = einops.einsum(probas, v, 'b n sq sk, b sk n h -> b sq n h')

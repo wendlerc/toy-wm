@@ -82,6 +82,7 @@ class CausalDit(nn.Module):
         self.bidirectional = bidirectional
         self.frame_rope = frame_rope
         self.toks_per_frame = (height//patch_size)*(width//patch_size) + n_registers
+        self.rope_C = rope_C
         if frame_rope:
             print("Using frame rope")
             print(self.toks_per_frame)
@@ -89,9 +90,11 @@ class CausalDit(nn.Module):
             self.grid_pe = nn.Parameter(t.randn(self.toks_per_frame - n_registers, d_model) * 1/d_model**0.5)
         else:
             if rope_tmax is None:
-                rope_tmax = 30*self.n_window*self.toks_per_frame
+                rope_tmax = self.n_window*self.toks_per_frame
             self.rope_seq = RoPE(d_model//n_heads, rope_tmax, C=rope_C)
             self.grid_pe = None
+        self.rope_tmax = rope_tmax
+
         self.blocks = nn.ModuleList([CausalBlock(lidx, d_model, expansion, n_heads, rope=self.rope_seq) for lidx in range(n_blocks)])
         self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
         self.norm = nn.LayerNorm(d_model)
@@ -106,8 +109,14 @@ class CausalDit(nn.Module):
         )
         self.cache = None
     
-    def activate_caching(self, batch_size):
+    def activate_caching(self, batch_size, max_frames=None):
         self.cache = KVCache(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window)
+        if max_frames is not None:
+            self.rope_seq = RoPE(self.d_head, max_frames*self.toks_per_frame, C=self.rope_C)
+            self.rope_seq.to(self.device)
+            self.rope_seq.to(self.dtype)
+            for block in self.blocks:
+                block.selfattn.rope = self.rope_seq
 
     def deactivate_caching(self):
         self.cache = None
@@ -161,7 +170,7 @@ class CausalDit(nn.Module):
         return self.parameters().__next__().dtype
 
 def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, frame_rope=False, C=10000):
-    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, frame_rope=frame_rope, C=C)
+    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, frame_rope=frame_rope, rope_C=C)
 
 if __name__ == "__main__":
     print("running w/o cache")
