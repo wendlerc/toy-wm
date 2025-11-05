@@ -6,7 +6,7 @@ from jaxtyping import Float, Bool
 from torch import Tensor
 from typing import Optional
 from torch.nn.attention.flex_attention import flex_attention
-
+from matplotlib import pyplot as plt
 
 class KVCache(nn.Module):
     def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window):
@@ -121,8 +121,11 @@ class AttentionEinOps(nn.Module):
             if self.rope is not None:
                 q = self.rope(q, offset=offset)
                 k_new = self.rope(k_new, offset=offset)
+            q = self.ln1(q)
+            k_new = self.ln2(k_new)
             k = t.cat([k_cache, k_new], dim=1)
             v = t.cat([v_cache, v_new], dim=1)
+            mask = None
         else:
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
             k = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
@@ -130,16 +133,17 @@ class AttentionEinOps(nn.Module):
             if self.rope is not None:
                 q = self.rope(q)
                 k = self.rope(k)
+            q = self.ln1(q)
+            k = self.ln2(k) # this leanrs much faster using layernorm here
             k_new = k
             v_new = v
-        
-        q = self.ln1(q)
-        k = self.ln2(k) # this leanrs much faster using layernorm here
 
         attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
         if mask is not None:
             attention = t.where(mask[:q.shape[1], :k.shape[1]], self.IGNORE, attention)
         probas = attention.softmax(dim=3)
+        #plt.imshow(probas[0, 0].cpu().numpy())
+        #plt.show()
         z = einops.einsum(probas, v, 'b n sq sk, b sk n h -> b sq n h')
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
         out = out.sum(dim=2) + self.b_O
