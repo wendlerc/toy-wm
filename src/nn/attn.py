@@ -68,6 +68,7 @@ class Attention(nn.Module):
         k_perm = k_perm.contiguous()
         v_perm = v_perm.contiguous()
         
+        print(f"q_perm {q_perm.shape}, k_perm {k_perm.shape}, v_perm {v_perm.shape}")
         # Handle mask using score_mod if needed
         if mask is not None:
             # Store mask and IGNORE for use in score_mod closure
@@ -82,12 +83,12 @@ class Attention(nn.Module):
             z = flex_attention(q_perm, k_perm, v_perm, score_mod=score_mod)
         else:
             z = flex_attention(q_perm, k_perm, v_perm)
-        
+        print(f"z {z.shape}")
         z = z.permute(0, 2, 1, 3)  # Back to (batch, posq, n_heads, d_head)
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
         out = out.sum(dim=2) + self.b_O
         #print(f"out {out.shape}, attention {probas.shape}, q {q.shape}, k {k.shape}, v {v.shape}")
-        return out, k, v
+        return out, z, None
 
 class AttentionSlow(nn.Module):
     IGNORE: Float[Tensor, ""]
@@ -148,4 +149,19 @@ class AttentionSlow(nn.Module):
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
         out = out.sum(dim=2) + self.b_O
         #print(f"out {out.shape}, attention {probas.shape}, q {q.shape}, k {k.shape}, v {v.shape}")
-        return out, k, v
+        return out, z, None
+
+
+if __name__ == "__main__":
+    attn_slow = AttentionSlow(d_model=256, n_heads=8)
+    attn = Attention(d_model=256, n_heads=8)
+    attn.load_state_dict(attn_slow.state_dict())
+    attn.double()
+    attn_slow.double()
+    x = t.randn(1, 1000, 256, dtype=t.float64)*10
+    mask = t.randint(0, 2, (1000, 1000), dtype=t.bool)
+    y, z, _ = attn(x, x, mask=mask)
+    y_slow, z_slow, _ = attn_slow(x, x, mask=mask)
+    assert t.allclose(z, z_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(z - z_slow).abs().max()}"
+    assert t.allclose(y, y_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(y - y_slow).abs().max()}"
+    print("Attention and AttentionSlow are the same")
