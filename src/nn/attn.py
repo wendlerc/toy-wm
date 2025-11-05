@@ -29,7 +29,7 @@ class KVCache(nn.Module):
     
     def get(self, layer_idx):
         assert layer_idx == self.curr_layer, f"layer idx should be the same as our internal counter but we got {layer_idx} and internal is {self.curr_layer}."
-        return self.keys[layer_idx], self.values[layer_idx]
+        return self.keys[layer_idx, :, :self.local_loc], self.values[layer_idx, :, :self.local_loc]
     
     def extend(self, layer_idx, keys, values):
         assert keys.shape == values.shape, f"keys and values shapes must match {self.keys.shape} != {self.values.shape}"
@@ -54,6 +54,13 @@ class KVCache(nn.Module):
         if self.local_loc < self.size:
             self.local_loc += n_frames * self.toks_per_frame
             assert self.local_loc <= self.size, f"the local loc {self.local_loc} should never be bigger than {self.size}, something went wrong."
+
+    def reset(self):
+        self.global_loc = 0
+        self.local_loc = 0
+        self.curr_layer = 0
+        self.keys.zero_()
+        self.values.zero_()
 
     @property
     def global_location(self):
