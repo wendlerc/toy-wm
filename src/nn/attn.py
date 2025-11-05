@@ -50,11 +50,10 @@ class KVCache(nn.Module):
         self.curr_layer = (self.curr_layer + 1) % self.n_layers
 
     def update_global_location(self, n_frames):
-        if self.curr_layer == self.n_layers - 1:
-            self.global_loc += n_frames * self.toks_per_frame
-            if self.local_loc < self.size:
-                self.local_loc += n_frames * self.toks_per_frame
-                assert self.local_loc <= self.size, f"the local loc {self.local_loc} should never be bigger than {self.size}, something went wrong."
+        self.global_loc += n_frames * self.toks_per_frame
+        if self.local_loc < self.size:
+            self.local_loc += n_frames * self.toks_per_frame
+            assert self.local_loc <= self.size, f"the local loc {self.local_loc} should never be bigger than {self.size}, something went wrong."
 
     @property
     def global_location(self):
