@@ -32,6 +32,8 @@ class Attention(nn.Module):
         self.register_buffer("IGNORE", t.tensor(float('-inf'), dtype=t.float32))
         self.rope = rope
         self.use_flex_attention = use_flex_attention
+        self.ln1 = nn.LayerNorm(d_head)
+        self.ln2 = nn.LayerNorm(d_head)
 
 
     def forward(
@@ -57,6 +59,8 @@ class Attention(nn.Module):
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') 
             k = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') 
             v = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') 
+        q = self.ln1(q)
+        k = self.ln2(k)
         if self.rope is not None:
             q = self.rope(q)
             k = self.rope(k)
@@ -98,7 +102,7 @@ class Attention(nn.Module):
                     attn_mask = mask.logical_not() if mask is not None else None,
                     dropout_p = 0.0, 
                     is_causal = False, 
-                    scale = 1/d_head**0.5
+                    scale = 1.0
                 )
         z = z.permute(0, 2, 1, 3)  # Back to (batch, posq, n_heads, d_head)
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
@@ -136,6 +140,8 @@ class AttentionSlow(nn.Module):
         nn.init.normal_(self.W_O, 1/d_head**0.5)
         self.register_buffer("IGNORE", t.tensor(float('-inf'), dtype=t.float32))
         self.rope = rope
+        self.ln1 = nn.LayerNorm(d_head)
+        self.ln2 = nn.LayerNorm(d_head)
 
 
     def forward(
@@ -161,11 +167,12 @@ class AttentionSlow(nn.Module):
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
             k = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
             v = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') + self.b_V
+        q = self.ln1(q)
+        k = self.ln2(k) # this leanrs much faster
         if self.rope is not None:
             q = self.rope(q)
             k = self.rope(k)
         attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
-        attention /= d_head**0.5 # this was the mistake :D:D:D I had d_model here initially
         if mask is not None:
             attention = t.where(mask, self.IGNORE, attention)
         probas = attention.softmax(dim=3)
