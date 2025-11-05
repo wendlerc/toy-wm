@@ -40,6 +40,7 @@ class RoPE(nn.Module):
     
     def forward(self, key_or_query: Float[Tensor, "batch sequence n_head d_head"],
                       offset: int = 0):
+        print("RoPE forward", key_or_query.shape, offset)
         x = key_or_query
         # start with doing it for just a single position m  
         x_perm = t.empty(x.shape, device=x.device, dtype=x.dtype) # batch sequence n_head d_head, we perm the last axis
@@ -47,6 +48,7 @@ class RoPE(nn.Module):
         odd = t.arange(1, x.shape[-1],2)
         x_perm[:, :, :, even] = -x[:, :, :, odd]
         x_perm[:, :, :, odd] = x[:, :, :, even]
+        assert x.shape[1] >= 1, f"x.shape[1] must be >= 1, got {x.shape}"
         return self.coss[:,offset:offset+x.shape[1]]*x + self.sins[:,offset:offset+x.shape[1]]*x_perm
 
 

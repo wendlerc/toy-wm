@@ -47,14 +47,14 @@ class KVCache(nn.Module):
         assert local_loc + keys.shape[1] <= self.size, f"{local_loc + keys.shape[1]} out of bounds {self.size}"
         self.keys[layer_idx, :, local_loc:local_loc + keys.shape[1]] = keys
         self.values[layer_idx, :, local_loc:local_loc + keys.shape[1]] = values 
-
-        if layer_idx == self.n_layers - 1:
-            self.global_loc += keys.shape[1]
-            if self.local_loc < self.size:
-                self.local_loc += keys.shape[1]
-                assert self.local_loc <= self.size, f"the local loc {self.local_loc} should never be bigger than {self.size}, something went wrong."
-
         self.curr_layer = (self.curr_layer + 1) % self.n_layers
+
+    def update_global_location(self, n_frames):
+        if self.curr_layer == self.n_layers - 1:
+            self.global_loc += n_frames * self.toks_per_frame
+            if self.local_loc < self.size:
+                self.local_loc += n_frames * self.toks_per_frame
+                assert self.local_loc <= self.size, f"the local loc {self.local_loc} should never be bigger than {self.size}, something went wrong."
 
     @property
     def global_location(self):

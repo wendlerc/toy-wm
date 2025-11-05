@@ -113,11 +113,14 @@ class CausalDit(nn.Module):
         self.cache = KVCache(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window)
         if max_frames is not None:
             self.rope_seq = RoPE(self.d_head, max_frames*self.toks_per_frame, C=self.rope_C)
+            print(self.rope_seq.sins.shape, self.rope_seq.coss.shape)
             self.rope_seq.to(self.device)
             self.rope_seq.to(self.dtype)
-            for block in self.blocks:
-                block.selfattn.rope = self.rope_seq
-
+            for idx, block in enumerate(self.blocks):
+                print("updating rope for block", idx)
+                print(self.blocks[idx].selfattn.rope.sins.shape, self.blocks[idx].selfattn.rope.coss.shape)
+                self.blocks[idx].selfattn.rope = self.rope_seq
+                print(self.blocks[idx].selfattn.rope.sins.shape, self.blocks[idx].selfattn.rope.coss.shape)
     def deactivate_caching(self):
         self.cache = None
     
