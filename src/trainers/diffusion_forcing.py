@@ -108,14 +108,17 @@ def train(model, dataloader,
             frames, actions = next(iterator)
         
         actions += 1
+        frames[:, 1:] = frames[:, :-1]
+        frames[:, 0] = 0
         if random.random() < p_pretrain:
-            actions[:, 1:] = actions[:, :-1] 
-            actions[:, 0] = 0
+            actions[:, 2:] = actions[:, :-2] 
+            actions[:, :2] = 0
             mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
             actions[mask] = 0
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
         else:
-            actions = actions[:, 1:]
+            actions[:,1:] = actions[:, :-1]
+            actions[:,0] = 0
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             ts[:, :-1] = 1 - (ts[:, :-1]*0.5 + 0.5)
         frames = frames[:, :model.n_window]

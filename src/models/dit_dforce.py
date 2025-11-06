@@ -160,7 +160,8 @@ class CausalDit(nn.Module):
     
     @property
     def causal_mask(self):
-        m_self = t.tril(t.ones((self.n_window+1, self.n_window+1), dtype=t.int8, device=self.device))
+        size = self.n_window
+        m_self = t.tril(t.ones((size, size), dtype=t.int8, device=self.device)) #- t.tril(t.ones((size, size), dtype=t.int8, device=self.device), diagonal=-self.n_window)
         m_self = t.kron(m_self, t.ones((self.toks_per_frame, self.toks_per_frame), dtype=t.int8, device=self.device))
         m_self = m_self.to(bool)
         return ~ m_self # we want to mask out the ones

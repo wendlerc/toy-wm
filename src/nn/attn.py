@@ -8,7 +8,180 @@ from typing import Optional
 from torch.nn.attention.flex_attention import flex_attention
 from matplotlib import pyplot as plt
 
+
 class KVCache(nn.Module):
+    """
+    Rolling KV cache implemented as a ring buffer.
+    - Shapes:
+        keys/values per extend(): (batch_size, T, n_heads, d_head)
+    - Internal storage:
+        (n_layers, batch_size, size, n_heads, d_head) where size = toks_per_frame * n_window
+    - Semantics:
+        Call `extend(layer_idx, k, v)` once per layer for the *same* frame.
+        Call `update_global_location(n_frames)` once after all layers to commit the frame(s).
+    """
+    def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window, *, dtype=None, device=None, enforce_layer_order=True):
+        super().__init__()
+        self.batch_size = batch_size
+        self.n_layers = n_layers
+        self.n_heads = n_heads
+        self.d_head = d_head
+        self.toks_per_frame = toks_per_frame
+        self.n_window = n_window
+        self.size = toks_per_frame * n_window
+
+        # Pointers / counters
+        self.curr_layer = 0                 # which layer are we writing for this frame
+        self.global_loc = 0                 # total tokens ever committed
+        self.local_loc = 0                  # valid tokens in buffer (<= size)
+        self._write_ptr = 0                 # ring-buffer write pointer (index of next commit position)
+
+        # Storage
+        dtype = dtype if dtype is not None else t.float32
+        self.register_buffer('keys',   t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
+        self.register_buffer('values', t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
+
+        # Misc
+        self.enforce_layer_order = enforce_layer_order
+
+    # -------------- Public API --------------
+    def get(self, layer_idx):
+        """Return (K, V) for given layer in chronological order: shape (B, L, H, D) where L = local_loc."""
+        self._check_layer(layer_idx)
+        if self.local_loc == 0:
+            # return empty views
+            empty = self.keys[layer_idx, :, :0]
+            return empty, empty
+
+        start = (self._write_ptr - self.local_loc) % self.size
+        if start + self.local_loc <= self.size:
+            # contiguous slice
+            k = self.keys[layer_idx, :, start:start + self.local_loc]
+            v = self.values[layer_idx, :, start:start + self.local_loc]
+        else:
+            # wrap: concatenate two slices to maintain chronological order
+            first = self.size - start
+            k = t.cat([
+                self.keys[layer_idx, :, start:self.size],
+                self.keys[layer_idx, :, 0:(self.local_loc - first)]
+            ], dim=1)
+            v = t.cat([
+                self.values[layer_idx, :, start:self.size],
+                self.values[layer_idx, :, 0:(self.local_loc - first)]
+            ], dim=1)
+        return k, v
+
+    @t.no_grad()
+    def extend(self, layer_idx, keys, values):
+        """
+        Stage (but do not commit) tokens for the current frame for the given layer.
+        Call update_global_location(n_frames) to commit after all layers wrote.
+        """
+        assert keys.shape == values.shape, f"keys and values shapes must match, got {keys.shape} vs {values.shape}"
+        self._check_layer(layer_idx)
+
+        # Expected shape: (B, T, H, D)
+        B, T, H, D = keys.shape
+        assert B == self.batch_size, f"batch mismatch: expected {self.batch_size}, got {B}"
+        assert H == self.n_heads and D == self.d_head, f"heads/d_head mismatch: expected {(self.n_heads, self.d_head)}, got {(H, D)}"
+        assert T > 0 and T <= self.size, f"T must be in 1..{self.size}, got {T}"
+        # Optional: if you only ever append whole frames:
+        # assert T == self.toks_per_frame, f"T must equal toks_per_frame ({self.toks_per_frame}), got {T}"
+
+        # Cast to buffer dtype/device if needed
+        if keys.dtype != self.keys.dtype or keys.device != self.keys.device:
+            keys = keys.to(dtype=self.keys.dtype, device=self.keys.device)
+        if values.dtype != self.values.dtype or values.device != self.values.device:
+            values = values.to(dtype=self.values.dtype, device=self.values.device)
+
+        # Write into the ring at the *current* write_ptr (uncommitted until update_global_location)
+        i0 = self._write_ptr
+        i1 = (self._write_ptr + T) % self.size
+        if i0 < i1:
+            self.keys[layer_idx, :, i0:i1] = keys
+            self.values[layer_idx, :, i0:i1] = values
+        else:
+            # wraps: split write
+            split = self.size - i0
+            self.keys[layer_idx, :, i0:self.size] = keys[:, :split]
+            self.values[layer_idx, :, i0:self.size] = values[:, :split]
+            self.keys[layer_idx, :, 0:i1] = keys[:, split:]
+            self.values[layer_idx, :, 0:i1] = values[:, split:]
+
+        # Advance expected layer (but do *not* advance write_ptr/local_len here)
+        self.curr_layer = (self.curr_layer + 1) % self.n_layers
+
+    @t.no_grad()
+    def update_global_location(self, n_frames):
+        """
+        Commit staged writes for n_frames (advances the ring write pointer once per frame).
+        Keep calling extend(layer_idx, ...) for each layer before you call this.
+        """
+        assert n_frames >= 0, f"n_frames must be >= 0, got {n_frames}"
+        tokens = n_frames * self.toks_per_frame
+        if tokens == 0:
+            return
+        assert tokens <= self.size, f"Cannot commit {tokens} tokens (> buffer size {self.size})."
+
+        self.global_loc += tokens
+        # Update valid length (never exceeds capacity)
+        self.local_loc = min(self.size, self.local_loc + tokens)
+        # Advance write pointer
+        self._write_ptr = (self._write_ptr + tokens) % self.size
+
+    @t.no_grad()
+    def reset(self, zero_memory: bool = True):
+        self.global_loc = 0
+        self.local_loc = 0
+        self.curr_layer = 0
+        self._write_ptr = 0
+        if zero_memory:
+            self.keys.zero_()
+            self.values.zero_()
+
+    # -------------- Convenience / Introspection --------------
+    @property
+    def local_location(self):
+        return self.local_loc
+
+    @property
+    def global_location(self):
+        return self.global_loc
+
+    @property
+    def device(self):
+        return self.keys.device
+
+    @property
+    def dtype(self):
+        return self.keys.dtype
+
+    def get_recent(self, layer_idx, last_T):
+        """Return the most recent last_T tokens for a layer (chronological)."""
+        self._check_layer(layer_idx, allow_any=True)
+        last_T = min(last_T, self.local_loc)
+        if last_T == 0:
+            empty = self.keys[layer_idx, :, :0]
+            return empty, empty
+        start = (self._write_ptr - last_T) % self.size
+        if start + last_T <= self.size:
+            k = self.keys[layer_idx, :, start:start + last_T]
+            v = self.values[layer_idx, :, start:start + last_T]
+        else:
+            first = self.size - start
+            k = t.cat([self.keys[layer_idx, :, start:self.size], self.keys[layer_idx, :, 0:(last_T - first)]], dim=1)
+            v = t.cat([self.values[layer_idx, :, start:self.size], self.values[layer_idx, :, 0:(last_T - first)]], dim=1)
+        return k, v
+
+    # -------------- Internal checks --------------
+    def _check_layer(self, layer_idx, allow_any=False):
+        assert 0 <= layer_idx < self.n_layers, f"layer_idx out of range: 0..{self.n_layers-1}, got {layer_idx}"
+        if self.enforce_layer_order and not allow_any:
+            assert layer_idx == (self.curr_layer % self.n_layers), \
+                f"Layer order mismatch: expected {self.curr_layer % self.n_layers}, got {layer_idx}"
+
+
+class KVCacheMine(nn.Module):
     def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window):
         """
         This is a rolling KVCache
@@ -19,7 +192,7 @@ class KVCache(nn.Module):
         self.d_head = d_head
         self.toks_per_frame = toks_per_frame
         self.n_window = n_window
-        self.size = toks_per_frame * (n_window + 1)
+        self.size = toks_per_frame * n_window#5*n_window#(n_window + 1)
         self.n_layers = n_layers
         self.curr_layer = 0
         self.global_loc = 0
@@ -41,8 +214,10 @@ class KVCache(nn.Module):
             local_loc -= keys.shape[1]
             assert local_loc >= 0, f"the cache update {keys.shape[1]} was larger than the cache {self.size}, that's not supported for now."
             assert local_loc % self.toks_per_frame == 0, f"the number of elements in the cache {local_loc} must be a multiple of the number of tokens per frame {self.toks_per_frame}"
-            self.keys[layer_idx, :, :local_loc] = self.keys[layer_idx, :, -local_loc:].clone()
-            self.values[layer_idx, :, :local_loc] = self.values[layer_idx, :, -local_loc:].clone()
+            self.keys[layer_idx, :, :local_loc] = self.keys[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame].clone()
+            self.values[layer_idx, :, :local_loc] = self.values[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame].clone()
+            #self.keys[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame] = self.keys[layer_idx, :, -local_loc:].clone()
+            #self.values[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame] = self.values[layer_idx, :, -local_loc:].clone()
 
         assert local_loc + keys.shape[1] <= self.size, f"{local_loc + keys.shape[1]} out of bounds {self.size}"
         self.keys[layer_idx, :, local_loc:local_loc + keys.shape[1]] = keys
@@ -146,7 +321,7 @@ class AttentionEinOps(nn.Module):
 
         attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
         if mask is not None:
-            attention = t.where(mask[:q.shape[1], :k.shape[1]], self.IGNORE, attention)
+            attention = t.where(mask[k_cache.shape[1]:k_cache.shape[1]+q.shape[1], :k.shape[1]], self.IGNORE, attention)
         probas = attention.softmax(dim=3)
         #plt.imshow(probas[0, 0].cpu().numpy())
         #plt.show()
