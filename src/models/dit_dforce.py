@@ -44,8 +44,9 @@ class CausalBlock(nn.Module):
         z = modulate(self.norm1(z), mu1, sigma1)
         if cache is not None:
             k, v = cache.get(self.layer_idx)
-            global_offset = cache.global_location
-            z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=k, v_cache=v, offset=global_offset)
+            offset = cache.global_location # this enables to include rope and ln into the cache
+            offset = 0 # this is for reapplying rope again and again to stay more similar to training
+            z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=k, v_cache=v, offset=offset)
             cache.extend(self.layer_idx, k_new, v_new)
         z = residual + c1*z
 
@@ -86,7 +87,7 @@ class CausalDit(nn.Module):
         if frame_rope:
             print("Using frame rope")
             print(self.toks_per_frame)
-            self.rope_seq = FrameRoPE(d_model//n_heads, self.n_window, self.toks_per_frame, C=C)
+            self.rope_seq = FrameRoPE(d_model//n_heads, self.n_window, self.toks_per_frame, C=rope_C)
             self.grid_pe = nn.Parameter(t.randn(self.toks_per_frame - n_registers, d_model) * 1/d_model**0.5)
         else:
             if rope_tmax is None:

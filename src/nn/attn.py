@@ -19,13 +19,13 @@ class KVCache(nn.Module):
         self.d_head = d_head
         self.toks_per_frame = toks_per_frame
         self.n_window = n_window
-        self.size = toks_per_frame * n_window
+        self.size = toks_per_frame * (n_window + 1)
         self.n_layers = n_layers
         self.curr_layer = 0
         self.global_loc = 0
         self.local_loc = 0
-        self.register_buffer('keys', t.zeros(n_layers, batch_size, n_window*toks_per_frame, n_heads, d_head))
-        self.register_buffer('values', t.zeros(n_layers, batch_size, n_window*toks_per_frame, n_heads, d_head))
+        self.register_buffer('keys', t.zeros(n_layers, batch_size, self.size, n_heads, d_head))
+        self.register_buffer('values', t.zeros(n_layers, batch_size, self.size, n_heads, d_head))
     
     def get(self, layer_idx):
         assert layer_idx == self.curr_layer, f"layer idx should be the same as our internal counter but we got {layer_idx} and internal is {self.curr_layer}."
@@ -61,6 +61,10 @@ class KVCache(nn.Module):
         self.curr_layer = 0
         self.keys.zero_()
         self.values.zero_()
+
+    @property
+    def local_location(self):
+        return self.local_loc
 
     @property
     def global_location(self):
@@ -118,13 +122,15 @@ class AttentionEinOps(nn.Module):
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
             k_new = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
             v_new = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') + self.b_V
-            if self.rope is not None:
-                q = self.rope(q, offset=offset)
-                k_new = self.rope(k_new, offset=offset)
-            q = self.ln1(q)
-            k_new = self.ln2(k_new)
+            
             k = t.cat([k_cache, k_new], dim=1)
             v = t.cat([v_cache, v_new], dim=1)
+
+            if self.rope is not None:
+                q = self.rope(q, offset=k_cache.shape[1])
+                k = self.rope(k, offset=0)
+            q = self.ln1(q)
+            k = self.ln2(k)
             mask = None
         else:
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q

@@ -13,6 +13,7 @@ import wandb
 from torch.nn import functional as F
 from tqdm import tqdm
 import math
+import random
 
 from muon import SingleDeviceMuonWithAuxAdam
 
@@ -63,7 +64,9 @@ def log_video(z, tag="generated_video", fps=5):
 
 def train(model, dataloader, 
           pred2frame=None, 
-          lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, clipping=True,
+          lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, 
+          p_pretrain=1.0,
+          clipping=True,
           checkpoint_manager=None):
 
     device = model.device
@@ -103,17 +106,26 @@ def train(model, dataloader,
         except StopIteration:
             iterator = iter(dataloader)
             frames, actions = next(iterator)
+        
+        actions += 1
+        if random.random() < p_pretrain:
+            actions[:, 1:] = actions[:, :-1] 
+            actions[:, 0] = 0
+            mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
+            actions[mask] = 0
+            ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
+        else:
+            actions = actions[:, 1:]
+            ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
+            ts[:, :-1] = 1 - (ts[:, :-1]*0.5 + 0.5)
+        frames = frames[:, :model.n_window]
+        actions = actions[:, :model.n_window]
         frames = frames.to(device).to(dtype)
         actions = actions.to(device)
-        actions[:, 1:] = actions[:, :-1] + 1
-        actions[:, 0] = 0
-        mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
-        actions[mask] = 0
-
+        ts = ts[:,:model.n_window]
         z = t.randn_like(frames, device=device, dtype=dtype)
         x0 = frames
         vel_true = x0 - z
-        ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
         x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
         vel_pred = model(x_t, actions, ts)
         loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
