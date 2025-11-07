@@ -114,9 +114,9 @@
       document.addEventListener('keydown', (e) => {
         let action = null;
         if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-          action = 1; // UP
+          action = 2; // UP
         } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-          action = 2; // DOWN
+          action = 3; // DOWN
         }
         if (action !== null) {
           socket.emit('action', { action });
@@ -126,7 +126,7 @@
 
       document.addEventListener('keyup', (e) => {
         if (['ArrowUp', 'ArrowDown', 'w', 'W', 's', 'S'].includes(e.key)) {
-          socket.emit('action', { action: 0 }); // NOOP when key released
+          socket.emit('action', { action: 1 }); // NOOP when key released
           e.preventDefault();
         }
       });
