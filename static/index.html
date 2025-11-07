@@ -85,7 +85,7 @@
 
       // Start/stop controls
       startBtn.addEventListener('click', () => {
-        socket.emit('start_stream', { n_steps: 4, cfg: 0.0, fps: 2, clamp: true });
+        socket.emit('start_stream', { n_steps: 4, cfg: 0.0, fps: 4, clamp: true });
       });
       stopBtn.addEventListener('click', () => {
         socket.emit('stop_stream');
