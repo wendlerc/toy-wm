@@ -82,7 +82,7 @@ def train(cfg, dataloader,
     gen_opt = get_muon(gen, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
 
     fake_sched = t.optim.lr_scheduler.LambdaLR(fake_opt, partial(lr_lambda, max_steps=n_fake_updates*max_steps))
-    gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lamda, max_steps=max_steps))
+    gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lambda, max_steps=max_steps))
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
@@ -118,20 +118,20 @@ def train(cfg, dataloader,
         real_vel = true_v(x_t_nograd, actions, ts)
         fake_vel = fake_v(x_t_nograd, actions, ts)
 
-        gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd - (fake_vel.detach() - real_vel.detach()))
+        gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd - (real_vel.detach() - fake_vel.detach()))
         gen_loss.backward()
         gen_opt.step()
         gen_sched.step()
         wandb.log({"gen_loss": gen_loss.item()})
-        wandb.log("gen_lr", gen_sched.get_last_lr())
+        wandb.log({"gen_lr": gen_sched.get_last_lr()})
         
         # update fake_v
         fake_loss = F.mse_loss(fake_vel, v_pred.detach())
         fake_loss.backward()
         fake_opt.step()
-        fake_sched.ste()
+        fake_sched.step()
         wandb.log({"fake_loss": fake_loss.item()})
-        wandb.log("fake_lr", fake_sched.get_last_lr())
+        wandb.log({"fake_lr": fake_sched.get_last_lr()})
         for _ in range(n_fake_updates-1):
             fake_opt.zero_grad()
             z = t.randn_like(frames, device=device, dtype=dtype)
@@ -143,9 +143,9 @@ def train(cfg, dataloader,
             fake_loss = F.mse_loss(fake_vel, v_pred.detach())
             fake_loss.backward()
             fake_opt.step()
-            fake_sched.ste()
+            fake_sched.step()
             wandb.log({"fake_loss":fake_loss.item()})
-            wandb.log("fake_lr", fake_sched.get_last_lr())
+            wandb.log({"fake_lr": fake_sched.get_last_lr()})
 
         pbar.set_postfix_str(f'loss_gen {gen_loss.item():.4f} loss_fake {fake_loss.item():.4f}')
 
@@ -153,4 +153,4 @@ def train(cfg, dataloader,
             checkpoint_manager.save(metric=gen_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
             frames_sampled = pred2frame(x_pred.detach().cpu())
             log_video(frames_sampled)
-    return model
+    return gen
