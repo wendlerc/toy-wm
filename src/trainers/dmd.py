@@ -22,19 +22,31 @@ from ..utils import log_video, load_model_from_config
 
 def get_muon(model, lr1, lr2, betas, weight_decay):
     body_weights = list(model.blocks.parameters())
-    other_weights = set(model.parameters()) - set(body_weights)
+    body_ids = {id(p) for p in body_weights}
+    other_weights = [p for p in model.parameters() if id(p) not in body_ids]
 
     hidden_weights = [p for p in body_weights if p.ndim >= 2]
     hidden_gains_biases = [p for p in body_weights if p.ndim < 2]
     nonhidden_params = list(other_weights)
+
     param_groups = [
-        dict(params=hidden_weights, use_muon=True,
-            lr=lr1, weight_decay=weight_decay),
-        dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
-            lr=lr2, betas=betas, weight_decay=weight_decay),
+        dict(
+            params=hidden_weights,
+            use_muon=True,
+            lr=lr1,
+            weight_decay=weight_decay,
+        ),
+        dict(
+            params=hidden_gains_biases + nonhidden_params,
+            use_muon=False,
+            lr=lr2,
+            betas=betas,
+            weight_decay=weight_decay,
+        ),
     ]
     optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
     return optimizer
+
 
 def lr_lambda(current_step, max_steps, warmup_steps=100):
     if current_step < warmup_steps:
@@ -66,11 +78,11 @@ def train(cfg, dataloader,
     dtype = gen.dtype
     print(device, dtype)
     
-    fake_opt = get_muon(fake_v, lr1, lr2, betas, weight_decay)
-    gen_opt = get_muon(gen, lr1, lr2, betas, weight_decay)
+    fake_opt = get_muon(fake_v, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
+    gen_opt = get_muon(gen, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
 
-    #fake_sched = t.optim.lr_scheduler.LambdaLR(fake_opt, partial(lr_lambda, max_steps=n_fake_updates*max_steps))
-    #gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lamda, max_steps=max_steps))
+    fake_sched = t.optim.lr_scheduler.LambdaLR(fake_opt, partial(lr_lambda, max_steps=n_fake_updates*max_steps))
+    gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lamda, max_steps=max_steps))
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
@@ -96,7 +108,6 @@ def train(cfg, dataloader,
         gen_ts = t.ones((frames.shape[0], frames.shape[1]), device=device, dtype=dtype)
         actions = actions.to(device)
         z = t.randn_like(frames, device=device, dtype=dtype)
-        print(z.shape)
         v_pred = gen(z, actions, gen_ts)
         x_pred = z + v_pred
         
@@ -110,16 +121,17 @@ def train(cfg, dataloader,
         gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd - (fake_vel.detach() - real_vel.detach()))
         gen_loss.backward()
         gen_opt.step()
-        #gen_sched.step()
-        wandb.log("gen_loss", gen_loss.item())
-        #wandb.log("gen_lr", gen_sched.get_last_lr())
+        gen_sched.step()
+        wandb.log({"gen_loss": gen_loss.item()})
+        wandb.log("gen_lr", gen_sched.get_last_lr())
         
         # update fake_v
         fake_loss = F.mse_loss(fake_vel, v_pred.detach())
         fake_loss.backward()
         fake_opt.step()
-        wandb.log("fake_loss", fake_loss.item())
-        #wandb.log("fake_lr", fake_sched.get_last_lr())
+        fake_sched.ste()
+        wandb.log({"fake_loss": fake_loss.item()})
+        wandb.log("fake_lr", fake_sched.get_last_lr())
         for _ in range(n_fake_updates-1):
             fake_opt.zero_grad()
             z = t.randn_like(frames, device=device, dtype=dtype)
@@ -131,13 +143,14 @@ def train(cfg, dataloader,
             fake_loss = F.mse_loss(fake_vel, v_pred.detach())
             fake_loss.backward()
             fake_opt.step()
-            wandb.log("fake_loss", fake_loss.item())
-            #wandb.log("fake_lr", fake_sched.get_last_lr())
+            fake_sched.ste()
+            wandb.log({"fake_loss":fake_loss.item()})
+            wandb.log("fake_lr", fake_sched.get_last_lr())
 
-        pbar.set_postfix_str(f'loss_gen {l_gen.item():.4f} loss_fake {l_fake.item():.4f}')
+        pbar.set_postfix_str(f'loss_gen {gen_loss.item():.4f} loss_fake {fake_loss.item():.4f}')
 
         if step % 100 == 0 and pred2frame is not None:
-            checkpoint_manager.save(metric=loss.item(), step=step, model=gen_v, optimizer=gen_opt, scheduler=gen_sched)
+            checkpoint_manager.save(metric=gen_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
             frames_sampled = pred2frame(x_pred.detach().cpu())
             log_video(frames_sampled)
     return model

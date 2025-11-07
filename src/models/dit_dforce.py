@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 import math
 
 def modulate(x, shift, scale):
-    print(x.shape, shift.shape, scale.shape)
     return x * (1 + scale) + shift
 
 class CausalBlock(nn.Module):
