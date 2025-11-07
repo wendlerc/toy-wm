@@ -18,6 +18,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config)
+    dtype = t.float32
     cmodel = cfg.model
     ctrain = cfg.train
     assert cmodel.checkpoint is not None, "DMD requires a checkpoint."
@@ -44,13 +45,13 @@ if __name__ == "__main__":
 
     loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
 
-    wandb.watch(model, log="all", log_freq=100)  # log_freq reduces logging overhead, log="all" avoids gradient tracking issues
     checkpoint_manager = CheckpointManager(save_dir, k=5, mode="min", metric_name="loss")
     p_pretrain = ctrain.p_pretrain if "p_pretrain" in ctrain else 1.0
     model = train(args.config, loader, pred2frame=pred2frame,
                   lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
                   weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps, p_pretrain=p_pretrain,
-                  clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager)
+                  clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
+                  device=device, dtype=dtype)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))

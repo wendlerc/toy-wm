@@ -1,0 +1,24 @@
+# Hugging Face Space Requirements for Neural Pong
+
+# Core ML framework
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Gradio for web interface
+gradio>=4.0.0
+
+# Hugging Face Hub for model loading
+huggingface-hub>=0.20.0
+
+# Data processing
+numpy>=1.24.0
+pillow>=10.0.0
+einops>=0.7.0
+
+# Configuration
+pyyaml>=6.0
+omegaconf>=2.3.0
+
+# Type hints
+jaxtyping>=0.2.0
+

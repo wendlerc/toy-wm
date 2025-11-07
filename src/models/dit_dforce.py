@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import math
 
 def modulate(x, shift, scale):
+    print(x.shape, shift.shape, scale.shape)
     return x * (1 + scale) + shift
 
 class CausalBlock(nn.Module):
@@ -173,6 +174,7 @@ class CausalDit(nn.Module):
     @property
     def dtype(self):
         return self.parameters().__next__().dtype
+
 
 def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, frame_rope=False, C=10000):
     return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, frame_rope=frame_rope, rope_C=C)

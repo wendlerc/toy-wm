@@ -18,11 +18,9 @@ from functools import partial
 
 from muon import SingleDeviceMuonWithAuxAdam
 
-from ..inference import sample
-from ..utils import log_video
-from ..utils
+from ..utils import log_video, load_model_from_config
 
-def get_muon(model):
+def get_muon(model, lr1, lr2, betas, weight_decay):
     body_weights = list(model.blocks.parameters())
     other_weights = set(model.parameters()) - set(body_weights)
 
@@ -36,7 +34,7 @@ def get_muon(model):
             lr=lr2, betas=betas, weight_decay=weight_decay),
     ]
     optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
-    return optimizier
+    return optimizer
 
 def lr_lambda(current_step, max_steps, warmup_steps=100):
     if current_step < warmup_steps:
@@ -50,12 +48,16 @@ def train(cfg, dataloader,
           p_pretrain=1.0,
           clipping=True,
           checkpoint_manager=None,
-          n_fake_updates=5):
+          n_fake_updates=5, device=None, dtype=None):
 
 
     true_v = load_model_from_config(cfg)
     fake_v = load_model_from_config(cfg)
     gen = load_model_from_config(cfg)
+
+    true_v.to(device).to(dtype)
+    fake_v.to(device).to(dtype)
+    gen.to(device).to(dtype)
 
     for p in true_v.parameters():
         p.requires_grad = False
@@ -64,11 +66,11 @@ def train(cfg, dataloader,
     dtype = gen.dtype
     print(device, dtype)
     
-    fake_opt = get_muon(fake_v)
-    gen_opt = get_muon(generator)
+    fake_opt = get_muon(fake_v, lr1, lr2, betas, weight_decay)
+    gen_opt = get_muon(gen, lr1, lr2, betas, weight_decay)
 
-    fake_sched = t.optim.lr_scheduler.LambdaLR(fake_opt, partial(lr_lambda, max_steps=n_fake_updates*max_steps))
-    gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lamda, max_steps=max_steps))
+    #fake_sched = t.optim.lr_scheduler.LambdaLR(fake_opt, partial(lr_lambda, max_steps=n_fake_updates*max_steps))
+    #gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lamda, max_steps=max_steps))
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
@@ -91,44 +93,46 @@ def train(cfg, dataloader,
         actions[mask] = 0
         
         # generate a video
-        gen_ts = t.ones_like(ts, device=device, dtype=dtype)
+        gen_ts = t.ones((frames.shape[0], frames.shape[1]), device=device, dtype=dtype)
         actions = actions.to(device)
         z = t.randn_like(frames, device=device, dtype=dtype)
+        print(z.shape)
         v_pred = gen(z, actions, gen_ts)
         x_pred = z + v_pred
         
         # compute dmd gradient
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
-        x_t = x_pred - ts*v_pred # maybe use fresh noise here?
-        x_t_nograd = x_t.nograd()
-        real_vel = real_v(x_t_nograd, actions, ts)
+        x_t = x_pred - ts[:,:,None,None,None]*v_pred # maybe use fresh noise here?
+        x_t_nograd = x_t.detach()
+        real_vel = true_v(x_t_nograd, actions, ts)
         fake_vel = fake_v(x_t_nograd, actions, ts)
 
         gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd - (fake_vel.detach() - real_vel.detach()))
         gen_loss.backward()
         gen_opt.step()
-        gen_sched.step()
+        #gen_sched.step()
         wandb.log("gen_loss", gen_loss.item())
-        wandb.log("gen_lr", gen_sched.get_last_lr())
+        #wandb.log("gen_lr", gen_sched.get_last_lr())
         
         # update fake_v
         fake_loss = F.mse_loss(fake_vel, v_pred.detach())
         fake_loss.backward()
         fake_opt.step()
         wandb.log("fake_loss", fake_loss.item())
-        wandb.log("fake_lr", fake_sched.get_last_lr())
+        #wandb.log("fake_lr", fake_sched.get_last_lr())
         for _ in range(n_fake_updates-1):
             fake_opt.zero_grad()
+            z = t.randn_like(frames, device=device, dtype=dtype)
             v_pred = gen(z, actions, gen_ts)
             x_pred = z + v_pred            
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
-            x_t = x_pred - ts*v_pred
+            x_t = x_pred - ts[:,:,None,None,None]*v_pred
             fake_vel = fake_v(x_t_nograd, actions, ts)
             fake_loss = F.mse_loss(fake_vel, v_pred.detach())
             fake_loss.backward()
             fake_opt.step()
             wandb.log("fake_loss", fake_loss.item())
-            wandb.log("fake_lr", fake_sched.get_last_lr())
+            #wandb.log("fake_lr", fake_sched.get_last_lr())
 
         pbar.set_postfix_str(f'loss_gen {l_gen.item():.4f} loss_fake {l_fake.item():.4f}')
 

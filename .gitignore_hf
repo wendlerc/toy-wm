@@ -1,0 +1,83 @@
+# Gitignore for Hugging Face Space deployment
+# Save this as .gitignore when setting up your Space
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+err.log
+
+# Weights & Biases
+wandb/
+
+# Experiments (only if not using LFS)
+# experiments/
+
+# Local development
+.env
+.envrc
+
+# Temporary files
+*.tmp
+tmp/
+temp/
+
+# UV lock file (not needed for HF Spaces)
+uv.lock
+
+# Dataset source files (if too large and not needed)
+# datasets/pong1M/*.npy
+
+# Sample outputs
+*.gif
+sample_*.gif
+
+# Server config
+server_link.txt
+
+# Original Flask app (not needed for Gradio)
+# play_pong.py
+# static/
+
+
+
+
