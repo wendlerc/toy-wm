@@ -97,7 +97,7 @@
       socket.on('frame', ({ frame, frame_index, action }) => {
         frameImg.src = `data:image/png;base64,${frame}`;
         // Display action: 0=NOOP, 1=UP, 2=DOWN
-        const actionLabels = ['NOOP', 'UP', 'DOWN'];
+        const actionLabels = ['START','NOOP', 'UP', 'DOWN'];
         actionValue.textContent = `${action} (${actionLabels[action] || 'UNKNOWN'})`;
       });
 
