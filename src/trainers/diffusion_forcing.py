@@ -32,7 +32,7 @@ def sample(v, z, actions, num_steps=10, cfg=0, negative_actions=None):
     ts = 3*ts/(2*ts + 1)
     z_prev = z.clone()
     z_prev = z_prev.to(device)
-    for i in tqdm(range(len(ts)-1)):
+    for i in range(len(ts)-1):
         t_cond = ts[i].repeat(z_prev.shape[0], 1)
         v_pred = v(z_prev.to(device), actions.to(device), t_cond.to(device))
         if cfg > 0:

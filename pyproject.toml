@@ -7,6 +7,10 @@ requires-python = ">=3.13"
 dependencies = [
     "diffusers>=0.35.2",
     "einops>=0.8.1",
+    "eventlet>=0.40.3",
+    "flask>=3.1.2",
+    "flask-cors>=6.0.1",
+    "flask-socketio>=5.5.1",
     "ipykernel>=7.1.0",
     "jaxtyping>=0.3.3",
     "jupyter>=1.1.1",
@@ -14,6 +18,7 @@ dependencies = [
     "muon-optimizer",
     "numpy>=2.3.4",
     "omegaconf>=2.3.0",
+    "pillow>=11.3.0",
     "pip>=25.3",
     "pyyaml>=6.0.3",
     "torch>=2.9.0",

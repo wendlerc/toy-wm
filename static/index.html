@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Pong</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Socket.IO client library (CDN) -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+      html, body { margin:0; height:100%; background:#111; color:#eee; font-family: system-ui, sans-serif; }
+      #overlay {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.8); z-index: 9999; transition: opacity 200ms ease;
+      }
+      #overlay.hidden { opacity: 0; pointer-events: none; }
+      .spinner {
+        width: 64px; height: 64px; border: 6px solid #444; border-top-color: #09f; border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #statusText { margin-top: 12px; color: #aaa; text-align: center; font-size: 14px; }
+      #app { padding: 16px; }
+      button { padding: 8px 12px; background:#09f; color:#fff; border:none; border-radius:8px; cursor:pointer; }
+      button:disabled { opacity: .5; cursor: not-allowed; }
+      img#frame { image-rendering: pixelated; width: 240px; height: 240px; background:#222; display:block; margin-top:12px; }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      <div>
+        <div class="spinner"></div>
+        <div id="statusText">Loading model…</div>
+      </div>
+    </div>
+
+    <div id="app">
+      <h1>Pong</h1>
+      <div>
+        <button id="startBtn" disabled>Start Stream</button>
+        <button id="stopBtn" disabled>Stop Stream</button>
+      </div>
+      <img id="frame" alt="Latest frame" />
+      <div id="actionDisplay" style="margin-top: 12px; font-size: 16px; font-family: monospace;">
+        Action: <span id="actionValue">-</span>
+      </div>
+    </div>
+
+    <script>
+      // If you serve socket.io client at /socket.io/socket.io.js you can use global io():
+      const socket = io({ transports: ['websocket', 'polling'] });
+
+      const overlay    = document.getElementById('overlay');
+      const statusText = document.getElementById('statusText');
+      const startBtn   = document.getElementById('startBtn');
+      const stopBtn    = document.getElementById('stopBtn');
+      const frameImg   = document.getElementById('frame');
+
+      function setReady(isReady) {
+        if (isReady) {
+          overlay.classList.add('hidden');
+          startBtn.disabled = false;
+          stopBtn.disabled  = false;
+          statusText.textContent = 'Ready';
+        } else {
+          overlay.classList.remove('hidden');
+          startBtn.disabled = true;
+          stopBtn.disabled  = true;
+          statusText.textContent = 'Loading model…';
+        }
+      }
+
+      // Initial state: assume not ready (show spinner)
+      setReady(false);
+
+      socket.on('connect', () => {
+        // server will immediately emit 'server_status' with current readiness
+        console.log('connected');
+      });
+
+      // NEW: backend broadcasts readiness changes
+      socket.on('server_status', (payload) => {
+        const ready = !!(payload && payload.ready);
+        setReady(ready);
+      });
+
+      // Start/stop controls
+      startBtn.addEventListener('click', () => {
+        socket.emit('start_stream', { n_steps: 4, cfg: 0.0, fps: 2, clamp: true });
+      });
+      stopBtn.addEventListener('click', () => {
+        socket.emit('stop_stream');
+      });
+
+      const actionValue = document.getElementById('actionValue');
+
+      // Incoming frames
+      socket.on('frame', ({ frame, frame_index, action }) => {
+        frameImg.src = `data:image/png;base64,${frame}`;
+        // Display action: 0=NOOP, 1=UP, 2=DOWN
+        const actionLabels = ['NOOP', 'UP', 'DOWN'];
+        actionValue.textContent = `${action} (${actionLabels[action] || 'UNKNOWN'})`;
+      });
+
+      socket.on('error', (e) => {
+        // If server says "not ready", keep the spinner shown (backend also emits server_status)
+        console.warn('server error', e);
+        if (e && /not ready/i.test(e.message || e)) {
+          setReady(false);
+        }
+      });
+
+      // Keyboard controls for paddle
+      // Actions: 0=NOOP, 1=UP, 2=DOWN
+      document.addEventListener('keydown', (e) => {
+        let action = null;
+        if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+          action = 1; // UP
+        } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+          action = 2; // DOWN
+        }
+        if (action !== null) {
+          socket.emit('action', { action });
+          e.preventDefault();
+        }
+      });
+
+      document.addEventListener('keyup', (e) => {
+        if (['ArrowUp', 'ArrowDown', 'w', 'W', 's', 'S'].includes(e.key)) {
+          socket.emit('action', { action: 0 }); // NOOP when key released
+          e.preventDefault();
+        }
+      });
+    </script>
+  </body>
+</html>

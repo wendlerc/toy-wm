@@ -28,7 +28,7 @@ class KVCache(nn.Module):
         self.d_head = d_head
         self.toks_per_frame = toks_per_frame
         self.n_window = n_window
-        self.size = toks_per_frame * n_window
+        self.size = (toks_per_frame * n_window) #toks_per_frame # (toks_per_frame * n_window)
 
         # Pointers / counters
         self.curr_layer = 0                 # which layer are we writing for this frame
@@ -304,7 +304,7 @@ class AttentionEinOps(nn.Module):
             if self.rope is not None:
                 q = self.rope(q, offset=k_cache.shape[1])
                 k = self.rope(k, offset=0)
-            q = self.ln1(q)
+            q = self.ln1(q) # this should be before rope
             k = self.ln2(k)
             mask = None
         else:

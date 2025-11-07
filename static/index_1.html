@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neural Pong Player - Streaming</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 800px;
+            width: 100%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2em;
+        }
+
+        .game-area {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        #canvas {
+            border: 3px solid #667eea;
+            border-radius: 10px;
+            background: #000;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            width: 480px;
+            height: 480px;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        label {
+            font-weight: bold;
+            color: #555;
+            min-width: 120px;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 8px;
+            border-radius: 5px;
+            background: #ddd;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #667eea;
+            cursor: pointer;
+        }
+
+        .value-display {
+            min-width: 50px;
+            text-align: right;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .keyboard-hint {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+
+        .keyboard-hint h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .keys {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .key {
+            background: #667eea;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+
+        .status.loading {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status.ready {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 1em;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #5568d3;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .current-action {
+            text-align: center;
+            font-size: 1.2em;
+            margin-top: 10px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 5px;
+        }
+
+        .action-name {
+            color: #667eea;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Neural Pong Player</h1>
+        
+        <div class="game-area">
+            <canvas id="canvas" width="24" height="24"></canvas>
+            
+            <div class="current-action">
+                Current Action: <span class="action-name" id="currentAction">No Input (1)</span>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <label>Number of Steps:</label>
+                    <input type="range" id="nSteps" min="4" max="20" value="">
+                    <span class="value-display" id="nStepsValue">8</span>
+                </div>
+                
+                <div class="control-group">
+                    <label>CFG Scale:</label>
+                    <input type="range" id="cfg" min="0" max="2" step="0.1" value="0">
+                    <span class="value-display" id="cfgValue">0</span>
+                </div>
+
+                <button id="startBtn" onclick="startStreaming()">Start Streaming</button>
+                <button id="stopBtn" onclick="stopStreaming()" disabled>Stop Streaming</button>
+            </div>
+
+            <div class="keyboard-hint">
+                <h3>Keyboard Controls:</h3>
+                <div class="keys">
+                    <span class="key">↑</span>
+                    <span class="key">W</span>
+                    <span>→ Move Up (Action 2)</span>
+                </div>
+                <div class="keys" style="margin-top: 8px;">
+                    <span class="key">↓</span>
+                    <span class="key">S</span>
+                    <span>→ Move Down (Action 3)</span>
+                </div>
+                <div class="keys" style="margin-top: 8px;">
+                    <span>No key pressed → No Input (Action 1)</span>
+                </div>
+            </div>
+
+            <div class="status ready" id="status">Ready</div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const API_URL = 'http://localhost:5000';
+
+        // WebSocket connection
+        let socket = null;
+        let isStreaming = false;
+        let frameIndex = 0;
+        let currentFrameImg = null;
+        let actionSendInterval = null;
+
+        // Action mapping: Up/W = 2, Down/S = 3, Nothing = 1
+        let currentAction = 1; // Default to no input
+
+        // Keyboard state tracking
+        const keys = {
+            'ArrowUp': false,
+            'ArrowDown': false,
+            'w': false,
+            'W': false,
+            's': false,
+            'S': false
+        };
+
+        // Update current action based on keyboard state
+        function updateAction() {
+            if (keys['ArrowUp'] || keys['w'] || keys['W']) {
+                currentAction = 2;
+                document.getElementById('currentAction').textContent = 'Move Up (2)';
+            } else if (keys['ArrowDown'] || keys['s'] || keys['S']) {
+                currentAction = 3;
+                document.getElementById('currentAction').textContent = 'Move Down (3)';
+            } else {
+                currentAction = 1;
+                document.getElementById('currentAction').textContent = 'No Input (1)';
+            }
+            
+            // If streaming, send action immediately
+            if (isStreaming && socket && socket.connected) {
+                sendAction();
+            }
+        }
+        
+        // Send current action to server
+        function sendAction() {
+            if (socket && socket.connected && isStreaming) {
+                const nSteps = parseInt(document.getElementById('nSteps').value);
+                const cfg = parseFloat(document.getElementById('cfg').value);
+                
+                socket.emit('action', {
+                    action: currentAction,
+                    n_steps: nSteps,
+                    cfg: cfg,
+                    frame_index: frameIndex++
+                });
+            }
+        }
+
+        // Keyboard event handlers
+        document.addEventListener('keydown', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = true;
+                updateAction();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (keys.hasOwnProperty(e.key)) {
+                keys[e.key] = false;
+                updateAction();
+            }
+        });
+
+        // Prevent default behavior for arrow keys
+        document.addEventListener('keydown', (e) => {
+            if (['ArrowUp', 'ArrowDown', 'w', 'W', 's', 'S'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        // Update slider value displays
+        document.getElementById('nSteps').addEventListener('input', (e) => {
+            document.getElementById('nStepsValue').textContent = e.target.value;
+        });
+
+        document.getElementById('cfg').addEventListener('input', (e) => {
+            document.getElementById('cfgValue').textContent = parseFloat(e.target.value).toFixed(1);
+        });
+
+        // Initialize WebSocket connection
+        function initSocket() {
+            socket = io(API_URL);
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                document.getElementById('status').textContent = 'Connected - Ready to stream';
+                document.getElementById('status').className = 'status ready';
+            });
+            
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'status error';
+                isStreaming = false;
+            });
+            
+            socket.on('connected', (data) => {
+                console.log('Server connection confirmed:', data);
+                if (data.model_loaded) {
+                    document.getElementById('status').textContent = 'Ready - Model Loaded';
+                    document.getElementById('status').className = 'status ready';
+                }
+            });
+            
+            socket.on('frame', (data) => {
+                // Display frame immediately
+                const img = new Image();
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.imageSmoothingEnabled = false;
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    currentFrameImg = img;
+                };
+                img.src = 'data:image/png;base64,' + data.frame;
+            });
+            
+            socket.on('error', (data) => {
+                console.error('Error from server:', data.message);
+                document.getElementById('status').textContent = `Error: ${data.message}`;
+                document.getElementById('status').className = 'status error';
+            });
+        }
+        
+        // Start streaming
+        function startStreaming() {
+            if (!socket || !socket.connected) {
+                alert('Not connected to server. Please wait...');
+                return;
+            }
+            
+            isStreaming = true;
+            frameIndex = 0;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('status').textContent = 'Streaming... Press keys to control';
+            document.getElementById('status').className = 'status ready';
+            
+            // Start the stream
+            const nSteps = parseInt(document.getElementById('nSteps').value);
+            const cfg = parseFloat(document.getElementById('cfg').value);
+            socket.emit('start_stream', { n_steps: nSteps, cfg: cfg });
+            
+            // Send actions periodically based on current key state
+            // This ensures we send actions even if keys are held down
+            actionSendInterval = setInterval(() => {
+                if (isStreaming) {
+                    sendAction();
+                }
+            }, 100); // Send action every 100ms (~10fps action rate)
+        }
+        
+        // Stop streaming
+        function stopStreaming() {
+            isStreaming = false;
+            if (actionSendInterval) {
+                clearInterval(actionSendInterval);
+                actionSendInterval = null;
+            }
+            
+            if (socket && socket.connected) {
+                socket.emit('stop_stream');
+            }
+            
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('status').textContent = 'Stopped';
+            document.getElementById('status').className = 'status ready';
+        }
+        
+        // Check server health
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_URL}/api/health`);
+                const data = await response.json();
+                
+                if (!data.model_loaded) {
+                    document.getElementById('status').textContent = 'Model Not Loaded';
+                    document.getElementById('status').className = 'status error';
+                }
+            } catch (error) {
+                document.getElementById('status').textContent = 'Server Not Available';
+                document.getElementById('status').className = 'status error';
+            }
+        }
+
+        // Initialize
+        initSocket();
+        checkHealth();
+        setInterval(checkHealth, 5000); // Check health every 5 seconds
+    </script>
+</body>
+</html>
+
