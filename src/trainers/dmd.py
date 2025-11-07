@@ -118,7 +118,7 @@ def train(cfg, dataloader,
         real_vel = true_v(x_t_nograd, actions, ts)
         fake_vel = fake_v(x_t_nograd, actions, ts)
 
-        gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd - (real_vel.detach() - fake_vel.detach()))
+        gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd + (real_vel.detach() - fake_vel.detach()))
         gen_loss.backward()
         gen_opt.step()
         gen_sched.step()
@@ -139,6 +139,7 @@ def train(cfg, dataloader,
             x_pred = z + v_pred            
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             x_t = x_pred - ts[:,:,None,None,None]*v_pred
+            x_t_nograd = x_t.detach()
             fake_vel = fake_v(x_t_nograd, actions, ts)
             fake_loss = F.mse_loss(fake_vel, v_pred.detach())
             fake_loss.backward()
