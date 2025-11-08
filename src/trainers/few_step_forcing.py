@@ -101,7 +101,7 @@ def train(model, dataloader,
 
         if step % 100 == 0 and pred2frame is not None:
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
-            frames_sampled = pred2frame((z + vel_pred).detach().cpu())
+            frames_sampled = pred2frame((z[:,1:] + vel_pred[:,1:]).detach().cpu())
             log_video(frames_sampled)
 
     return model
