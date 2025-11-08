@@ -132,6 +132,8 @@ def train(cfg, dataloader,
 
         gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd + (real_vel.detach() - fake_vel.detach()))
         gen_loss.backward()
+        if clipping:
+            t.nn.utils.clip_grad_norm_(gen.parameters(), 1.0)
         gen_opt.step()
         gen_sched.step()
         wandb.log({"gen_loss": gen_loss.item()})
@@ -140,6 +142,8 @@ def train(cfg, dataloader,
         # update fake_v
         fake_loss = F.mse_loss(fake_vel, v_pred.detach())
         fake_loss.backward()
+        if clipping:
+            t.nn.utils.clip_grad_norm_(fake_v.parameters(), 1.0)
         fake_opt.step()
         fake_sched.step()
         wandb.log({"fake_loss": fake_loss.item()})
