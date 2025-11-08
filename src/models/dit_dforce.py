@@ -48,6 +48,9 @@ class CausalBlock(nn.Module):
             offset = 0 # this is for reapplying rope again and again to stay more similar to training
             z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=k, v_cache=v, offset=offset)
             cache.extend(self.layer_idx, k_new, v_new)
+        else:
+            z, _, _ = self.selfattn(z, z, mask=mask_self)
+            
         z = residual + c1*z
 
         residual = z

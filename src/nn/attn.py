@@ -181,7 +181,7 @@ class KVCache(nn.Module):
                 f"Layer order mismatch: expected {self.curr_layer % self.n_layers}, got {layer_idx}"
 
 
-class KVCacheMine(nn.Module):
+class KVCacheMine(nn.Module): # this does not work because it destroys the cache of later timesteps when the earlier ones overflow and move to the left. --> fix as an exercise.
     def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window):
         """
         This is a rolling KVCache
@@ -254,8 +254,6 @@ class KVCacheMine(nn.Module):
         return self.keys.dtype
 
     
-
-
 class AttentionEinOps(nn.Module):
     IGNORE: Float[Tensor, ""]
 
@@ -320,8 +318,11 @@ class AttentionEinOps(nn.Module):
             v_new = v
 
         attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
-        if mask is not None:
+        if mask is not None and k_cache is not None:
             attention = t.where(mask[k_cache.shape[1]:k_cache.shape[1]+q.shape[1], :k.shape[1]], self.IGNORE, attention)
+        elif mask is not None:
+            attention = t.where(mask, self.IGNORE, attention) 
+            print(f"attention {attention.shape}, mask {mask.shape}")
         probas = attention.softmax(dim=3)
         #plt.imshow(probas[0, 0].cpu().numpy())
         #plt.show()
@@ -329,36 +330,6 @@ class AttentionEinOps(nn.Module):
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
         out = out.sum(dim=2) + self.b_O
         return out, k_new, v_new
-
-
-if __name__ == "__main__":
-    from .pe import RoPE
-    import inspect
-    rope = RoPE(256//8, 10000)
-    dtype = t.float32
-    rope = rope.to(dtype)
-    attn_slow = AttentionSlow(d_model=256, n_heads=8, rope=rope)
-    attn = Attention(d_model=256, n_heads=8, rope=rope)
-    attn.load_state_dict(attn_slow.state_dict(), strict=False)
-    attn.to(dtype)
-    attn_slow.to(dtype)
-    x = t.randn(1, 1000, 256, dtype=dtype)*10
-    xkv = t.randn(1, 1000, 256, dtype=dtype)*10
-    mask = t.randint(0, 2, (1000, 1000), dtype=t.bool)
-    y, z, _ = attn(x, xkv, mask=mask)
-    y_slow, z_slow, _ = attn_slow(x, xkv, mask=mask)
-    #assert t.allclose(z, z_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(z - z_slow).abs().max()}"
-    #assert t.allclose(y, y_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(y - y_slow).abs().max()}"
-    print("Attention and AttentionSlow are the same")
-
-    loss = t.nn.functional.mse_loss(y, y_slow)
-    loss.backward()
-    print("-"*100)
-    for n, p in attn.named_parameters():
-        print(n, p.grad.shape, p.grad.max(), p.grad.min())
-    print("-"*100)
-    for n, p in attn_slow.named_parameters():
-        print(n, p.grad.shape, p.grad.max(), p.grad.min())
 
 
 class Attention(nn.Module):
@@ -468,3 +439,33 @@ class Attention(nn.Module):
     @property
     def device(self):
         return self.parameters().__next__().device
+
+
+if __name__ == "__main__":
+    from .pe import RoPE
+    import inspect
+    rope = RoPE(256//8, 10000)
+    dtype = t.float32
+    rope = rope.to(dtype)
+    attn_slow = AttentionSlow(d_model=256, n_heads=8, rope=rope)
+    attn = Attention(d_model=256, n_heads=8, rope=rope)
+    attn.load_state_dict(attn_slow.state_dict(), strict=False)
+    attn.to(dtype)
+    attn_slow.to(dtype)
+    x = t.randn(1, 1000, 256, dtype=dtype)*10
+    xkv = t.randn(1, 1000, 256, dtype=dtype)*10
+    mask = t.randint(0, 2, (1000, 1000), dtype=t.bool)
+    y, z, _ = attn(x, xkv, mask=mask)
+    y_slow, z_slow, _ = attn_slow(x, xkv, mask=mask)
+    #assert t.allclose(z, z_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(z - z_slow).abs().max()}"
+    #assert t.allclose(y, y_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(y - y_slow).abs().max()}"
+    print("Attention and AttentionSlow are the same")
+
+    loss = t.nn.functional.mse_loss(y, y_slow)
+    loss.backward()
+    print("-"*100)
+    for n, p in attn.named_parameters():
+        print(n, p.grad.shape, p.grad.max(), p.grad.min())
+    print("-"*100)
+    for n, p in attn_slow.named_parameters():
+        print(n, p.grad.shape, p.grad.max(), p.grad.min())

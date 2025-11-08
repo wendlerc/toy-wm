@@ -60,7 +60,7 @@ def train(cfg, dataloader,
           p_pretrain=1.0,
           clipping=True,
           checkpoint_manager=None,
-          n_fake_updates=5, device=None, dtype=None):
+          n_fake_updates=2, device=None, dtype=None):
 
 
     true_v = load_model_from_config(cfg)
@@ -73,6 +73,18 @@ def train(cfg, dataloader,
 
     for p in true_v.parameters():
         p.requires_grad = False
+
+    true_v = t.compile(true_v)
+    fake_v = t.compile(fake_v)
+    gen = t.compile(gen)
+
+    z = t.randn((30,1,3,24,24), device=device, dtype=dtype)
+    gen_ts = t.ones((30, 1), device=device, dtype=dtype)
+    actions = t.tensor([[0]+29*[2]], device=device, dtype=t.int32).T
+    v_pred = gen(z, actions, gen_ts)
+    x_pred = z + v_pred            
+    frames_sampled = pred2frame(x_pred.permute(1,0,2,3,4)[:1].detach().cpu())
+    log_video(frames_sampled)
     
     device = gen.device
     dtype = gen.dtype
@@ -113,7 +125,7 @@ def train(cfg, dataloader,
         
         # compute dmd gradient
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
-        x_t = x_pred - ts[:,:,None,None,None]*v_pred # maybe use fresh noise here?
+        x_t = x_pred - ts[:,:,None,None,None]*v_pred 
         x_t_nograd = x_t.detach()
         real_vel = true_v(x_t_nograd, actions, ts)
         fake_vel = fake_v(x_t_nograd, actions, ts)
@@ -152,6 +164,6 @@ def train(cfg, dataloader,
 
         if step % 100 == 0 and pred2frame is not None:
             checkpoint_manager.save(metric=gen_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
-            frames_sampled = pred2frame(x_pred.detach().cpu())
+            frames_sampled = pred2frame(x_pred[:1].detach().cpu())
             log_video(frames_sampled)
     return gen
