@@ -18,14 +18,17 @@ import random
 from muon import SingleDeviceMuonWithAuxAdam
 
 from ..inference.sampling import sample
-from ..utils import log_video    
+from ..utils import log_video
 
 
 def train(model, dataloader, 
           pred2frame=None, 
           lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, 
+          n_steps=1,
           clipping=True,
           checkpoint_manager=None):
+    if n_steps != 1:
+        raise NotImplementedError("Currently, n_steps=1 is supported for few step forcing")
 
     device = model.device
     dtype = model.dtype
@@ -68,13 +71,14 @@ def train(model, dataloader,
         actions += 1
         frames[:, 1:] = frames[:, :-1]
         frames[:, 0] = 0
-        
+
         actions[:, 1:] = actions[:, :-1] 
         actions[:, :1] = 0
         mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
         actions[mask] = 0
-        ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
-        
+        ts = t.ones(frames.shape[0], frames.shape[1], device=device, dtype=dtype)
+        ts[:, 0] = 0
+
         frames = frames[:, :model.n_window]
         actions = actions[:, :model.n_window]
         frames = frames.to(device).to(dtype)
@@ -83,8 +87,8 @@ def train(model, dataloader,
         z = t.randn_like(frames, device=device, dtype=dtype)
         x0 = frames
         vel_true = x0 - z
-        x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
-        vel_pred = model(x_t, actions, ts)
+        xt = x0 - ts[:,:,None,None,None] * vel_true
+        vel_pred = model(xt, actions, ts)
         loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
         wandb.log({"loss": loss.item()})
         wandb.log({"lr": scheduler.get_last_lr()[0]})
@@ -97,29 +101,7 @@ def train(model, dataloader,
 
         if step % 100 == 0 and pred2frame is not None:
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
-            # compute loss per noise level
-            noise_levels = [1., 0.75, 0.5, 0.25, 0.1, 0]
-            noise_losses = []
-            with t.no_grad():
-                for noise_level in noise_levels:
-                    z = t.randn_like(frames, device=device, dtype=dtype)
-                    x0 = frames
-                    vel_true = x0 - z
-                    ts = noise_level * t.ones(frames.shape[0], frames.shape[1], device=device, dtype=dtype)
-                    x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
-                    vel_pred = model(x_t, actions, ts)
-                    noise_losses.append(F.mse_loss(vel_pred, vel_true, reduction="mean"))
-                    wandb.log({f"noise:{noise_level}": noise_losses[-1].item()})
-
-
-            if frames.shape[1] == 1: 
-                z_sampled = sample(model, 
-                                   t.randn_like(frames[:30], device=device, dtype=dtype), 
-                                   actions[:30], num_steps=10)
-                z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
-            else:
-                z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
-            frames_sampled = pred2frame(z_sampled)
-            log_video(frames_sampled, tag=f"{step:04d}")
+            frames_sampled = pred2frame((z + vel_pred).detach().cpu())
+            log_video(frames_sampled)
 
     return model

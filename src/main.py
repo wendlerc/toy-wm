@@ -1,6 +1,5 @@
 from .datasets.pong1m import get_loader
 from .models.dit_dforce import get_model
-from .trainers.diffusion_forcing import train
 import wandb
 import argparse
 import os
@@ -15,11 +14,16 @@ t.set_float32_matmul_precision("high")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()    # 0.002, 3e-5, (0.9, 0.95), 1e-5, 26000 works ok
     parser.add_argument("--config", type=str, default="configs/config.yaml")
+    parser.add_argument("--few", default=False, action="store_true")
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config)
     cmodel = cfg.model
     ctrain = cfg.train
+    if args.few:
+        from .trainers.few_step_forcing import train
+    else:
+        from .trainers.diffusion_forcing import train
 
     wandb.init(project=cfg.wandb.project, name=cfg.wandb.name)
     wandb.config.update(OmegaConf.to_container(cfg, resolve=True))
@@ -45,7 +49,7 @@ if __name__ == "__main__":
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
     frame_rope = cmodel.frame_rope if "frame_rope" in cmodel else False
-    C = cmodel.C if "C" in cmodel else 10000
+    C = cmodel.C if "C" in cmodel else 5000
     model = get_model(height, width, 
                     n_window=cmodel.n_window, 
                     patch_size=cmodel.patch_size, 
@@ -81,7 +85,7 @@ if __name__ == "__main__":
     p_pretrain = ctrain.p_pretrain if "p_pretrain" in ctrain else 1.0
     model = train(model, loader, pred2frame=pred2frame,
                   lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
-                  weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps, p_pretrain=p_pretrain,
+                  weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
                   clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager)
 
     # Save model
