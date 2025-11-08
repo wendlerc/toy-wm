@@ -60,7 +60,7 @@ def train(cfg, dataloader,
           p_pretrain=1.0,
           clipping=True,
           checkpoint_manager=None,
-          n_fake_updates=2, device=None, dtype=None):
+          n_fake_updates=5, device=None, dtype=None):
 
 
     true_v = load_model_from_config(cfg)

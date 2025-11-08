@@ -321,8 +321,10 @@ class AttentionEinOps(nn.Module):
         if mask is not None and k_cache is not None:
             attention = t.where(mask[k_cache.shape[1]:k_cache.shape[1]+q.shape[1], :k.shape[1]], self.IGNORE, attention)
         elif mask is not None:
+            if attention.shape[-1] != mask.shape[-1] or attention.shape[-2] != mask.shape[-2]:
+                #print(f"Warning: attention shape {attention.shape} does not match mask shape {mask.shape}")
+                mask = mask[:attention.shape[-1], :attention.shape[-2]]
             attention = t.where(mask, self.IGNORE, attention) 
-            print(f"attention {attention.shape}, mask {mask.shape}")
         probas = attention.softmax(dim=3)
         #plt.imshow(probas[0, 0].cpu().numpy())
         #plt.show()
@@ -336,6 +338,7 @@ class Attention(nn.Module):
     IGNORE: Float[Tensor, ""]
 
     def __init__(self, d_model, n_heads, rope=None, use_flex_attention=False):
+        raise NotImplementedError("Attention is not implemented yet")
         super().__init__()
         assert d_model % n_heads == 0, f"{d_model} must be divisble by {n_heads}"
         self.d_head = d_model // n_heads
