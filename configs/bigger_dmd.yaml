@@ -20,11 +20,11 @@ model:
   #checkpoint: "experiments/vivid-sea-390/ckpt-step=000700-metric=0.01958773.pt"
 
 train:
-  lr1: 0.002
-  lr2: 3e-5
-  betas: [0.9, 0.95]
+  lr1: 0.001
+  lr2: 1.5e-5
+  betas: [0.9, 0.98]
   weight_decay: 1.0e-5
-  max_steps: 5000
+  max_steps: 10000
   batch_size: 8
   noclip: false
   duration: 1

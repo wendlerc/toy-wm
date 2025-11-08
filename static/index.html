@@ -18,7 +18,7 @@
         animation: spin 0.9s linear infinite;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
-      #statusText { margin-top: 12px; color: #aaa; text-align: center; font-size: 14px; }
+      #statusText { margin-top: 12px; color: #aaa; text-align: center; font-size: 14px; white-space: pre-line; }
       #app { padding: 16px; }
       button { padding: 8px 12px; background:#09f; color:#fff; border:none; border-radius:8px; cursor:pointer; }
       button:disabled { opacity: .5; cursor: not-allowed; }
@@ -35,6 +35,16 @@
 
     <div id="app">
       <h1>Pong</h1>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; margin-bottom: 8px;">
+          FPS: <input type="number" id="fpsInput" value="5" min="1" max="60" step="1" style="width: 60px; padding: 4px; margin-left: 8px;" />
+          <span style="color: #aaa; font-size: 12px; margin-left: 8px;">frames per second</span>
+        </label>
+        <label style="display: block; margin-bottom: 8px;">
+          Steps: <input type="number" id="stepsInput" value="1" min="1" max="100" step="1" style="width: 60px; padding: 4px; margin-left: 8px;" />
+          <span style="color: #aaa; font-size: 12px; margin-left: 8px;">diffusion steps</span>
+        </label>
+      </div>
       <div>
         <button id="startBtn" disabled>Start Stream</button>
         <button id="stopBtn" disabled>Stop Stream</button>
@@ -42,6 +52,9 @@
       <img id="frame" alt="Latest frame" />
       <div id="actionDisplay" style="margin-top: 12px; font-size: 16px; font-family: monospace;">
         Action: <span id="actionValue">-</span>
+      </div>
+      <div id="fpsDisplay" style="margin-top: 8px; font-size: 16px; font-family: monospace;">
+        Achieved FPS: <span id="fpsValue">-</span>
       </div>
     </div>
 
@@ -55,57 +68,75 @@
       const stopBtn    = document.getElementById('stopBtn');
       const frameImg   = document.getElementById('frame');
 
-      function setReady(isReady) {
-        if (isReady) {
-          overlay.classList.add('hidden');
-          startBtn.disabled = false;
-          stopBtn.disabled  = false;
-          statusText.textContent = 'Ready';
-        } else {
+      function setStatus(isReady, isBusy) {
+        if (!isReady) {
+          // Model is still loading
           overlay.classList.remove('hidden');
           startBtn.disabled = true;
           stopBtn.disabled  = true;
           statusText.textContent = 'Loading model…';
+        } else if (isBusy) {
+          // Server is ready but being used by someone else
+          overlay.classList.remove('hidden');
+          startBtn.disabled = true;
+          stopBtn.disabled  = true;
+          statusText.textContent = 'Server is being used by another user.\nPlease wait...';
+        } else {
+          // Server is ready and available
+          overlay.classList.add('hidden');
+          startBtn.disabled = false;
+          stopBtn.disabled  = false;
+          statusText.textContent = 'Ready';
         }
       }
 
       // Initial state: assume not ready (show spinner)
-      setReady(false);
+      setStatus(false, false);
 
       socket.on('connect', () => {
         // server will immediately emit 'server_status' with current readiness
         console.log('connected');
       });
 
-      // NEW: backend broadcasts readiness changes
+      // NEW: backend broadcasts readiness and busy state changes
       socket.on('server_status', (payload) => {
         const ready = !!(payload && payload.ready);
-        setReady(ready);
+        const busy = !!(payload && payload.busy);
+        console.log('Server status:', { ready, busy });
+        setStatus(ready, busy);
       });
 
       // Start/stop controls
       startBtn.addEventListener('click', () => {
-        socket.emit('start_stream', { n_steps: 4, cfg: 0.0, fps: 4, clamp: true });
+        const fps = parseInt(document.getElementById('fpsInput').value) || 12;
+        const n_steps = parseInt(document.getElementById('stepsInput').value) || 1;
+        socket.emit('start_stream', { n_steps: n_steps, cfg: 0.0, fps: fps, clamp: true });
       });
       stopBtn.addEventListener('click', () => {
         socket.emit('stop_stream');
       });
 
       const actionValue = document.getElementById('actionValue');
+      const fpsValue = document.getElementById('fpsValue');
 
       // Incoming frames
-      socket.on('frame', ({ frame, frame_index, action }) => {
+      socket.on('frame', ({ frame, frame_index, action, fps }) => {
         frameImg.src = `data:image/png;base64,${frame}`;
         // Display action: 0=NOOP, 1=UP, 2=DOWN
         const actionLabels = ['START','NOOP', 'UP', 'DOWN'];
         actionValue.textContent = `${action} (${actionLabels[action] || 'UNKNOWN'})`;
+        // Display achieved FPS
+        if (fps !== undefined) {
+          fpsValue.textContent = fps.toFixed(1);
+        }
       });
 
       socket.on('error', (e) => {
-        // If server says "not ready", keep the spinner shown (backend also emits server_status)
         console.warn('server error', e);
-        if (e && /not ready/i.test(e.message || e)) {
-          setReady(false);
+        // The server_status event will handle showing the appropriate overlay
+        // Just log the error for now
+        if (e && e.message) {
+          console.error('Server error message:', e.message);
         }
       });
 

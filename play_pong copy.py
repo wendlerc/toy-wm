@@ -65,10 +65,6 @@ device = None
 
 server_ready = False    # <--- readiness flag
 
-# Single-user limitation
-active_user_sid = None  # Session ID of the active user
-user_lock = threading.Lock()  # Protects active_user_sid
-
 stream_lock = threading.Lock()
 stream_thread = None
 stream_running = False
@@ -181,7 +177,7 @@ def initialize_model():
     
     model.activate_caching(1, 300)  # Cache will now be created on the same device as model
 
-    #model = t.compile(model)
+    model = t.compile(model)
 
 
     _, pred2frame_ = get_loader(duration=1, fps=30, mode='-1,1')
@@ -251,9 +247,6 @@ class FrameScheduler(threading.Thread):
         self.cfg = float(cfg)
         self.clamp = bool(clamp)
         self._stop = threading.Event()
-        # FPS tracking
-        self.frame_times = []
-        self.last_frame_time = None
 
     def stop(self):
         self._stop.set()
@@ -285,25 +278,9 @@ class FrameScheduler(threading.Thread):
                 else:
                     frame_np = frame_arr.astype(np.uint8, copy=False)
                 img_b64 = _png_base64_from_uint8(frame_np)
-                
-                # Calculate achieved FPS
-                current_time = time.perf_counter()
-                if self.last_frame_time is not None:
-                    frame_delta = current_time - self.last_frame_time
-                    self.frame_times.append(frame_delta)
-                    # Keep only last 30 frames for moving average
-                    if len(self.frame_times) > 30:
-                        self.frame_times.pop(0)
-                    avg_frame_time = sum(self.frame_times) / len(self.frame_times)
-                    achieved_fps = 1.0 / avg_frame_time if avg_frame_time > 0 else 0
-                else:
-                    achieved_fps = 0
-                self.last_frame_time = current_time
-                
                 socketio.emit('frame', {'frame': img_b64,
                                         'frame_index': frame_index,
-                                        'action': action,
-                                        'fps': achieved_fps})
+                                        'action': action})
                 frame_index += 1
             except Exception as e:
                 print("Generation error:", repr(e))
@@ -413,24 +390,10 @@ def default_error_handler(e):
 @socketio.on('connect')
 def handle_connect():
     try:
-        sid = request.sid
-        print(f'Client connected: {sid}')
-        
-        with user_lock:
-            is_busy = active_user_sid is not None and active_user_sid != sid
-        
-        # Immediately tell the new client current readiness and availability
-        emit('server_status', {
-            'ready': server_ready,
-            'busy': is_busy,
-            'is_active_user': not is_busy
-        })
-        emit('connected', {
-            'status': 'connected',
-            'model_loaded': model is not None,
-            'ready': server_ready,
-            'busy': is_busy
-        })
+        print('Client connected')
+        # Immediately tell the new client current readiness so UI can show/hide spinner
+        emit('server_status', {'ready': server_ready})
+        emit('connected', {'status': 'connected', 'model_loaded': model is not None, 'ready': server_ready})
     except Exception as e:
         print(f"Error in handle_connect: {e}")
         import traceback
@@ -438,56 +401,16 @@ def handle_connect():
 
 @socketio.on('disconnect')
 def handle_disconnect(*args):
-    global active_user_sid
-    sid = request.sid
-    print(f'Client disconnected: {sid}')
-    
-    # Release the active user slot if this was the active user
-    with user_lock:
-        if active_user_sid == sid:
-            print(f'Active user {sid} disconnected, freeing slot')
-            active_user_sid = None
-            # Notify all other clients that server is now available
-            socketio.emit('server_status', {
-                'ready': server_ready,
-                'busy': False,
-                'is_active_user': False
-            })
-    
+    print('Client disconnected')
     stop_stream()
 
 @socketio.on('start_stream')
 def handle_start_stream(data):
-    global active_user_sid
     try:
-        sid = request.sid
-        
         if not server_ready:
             # Tell client to keep showing spinner
             emit('server_status', {'ready': server_ready})
             return
-        
-        # Check if server is busy with another user
-        with user_lock:
-            if active_user_sid is not None and active_user_sid != sid:
-                emit('error', {'message': 'Server is currently being used by another user. Please wait.'})
-                emit('server_status', {
-                    'ready': server_ready,
-                    'busy': True,
-                    'is_active_user': False
-                })
-                return
-            # Claim the active user slot
-            active_user_sid = sid
-            print(f'User {sid} claimed active slot')
-        
-        # Notify all clients about the new busy state
-        socketio.emit('server_status', {
-            'ready': server_ready,
-            'busy': True,
-            'is_active_user': False
-        }, include_self=False)
-        
         n_steps = int(data.get('n_steps', 8))
         cfg = float(data.get('cfg', 0))
         fps = int(data.get('fps', 30))
@@ -500,10 +423,6 @@ def handle_start_stream(data):
             print(f"Error starting stream: {e}")
             import traceback
             traceback.print_exc()
-            # Release the slot on error
-            with user_lock:
-                if active_user_sid == sid:
-                    active_user_sid = None
             emit('error', {'message': str(e)})
     except Exception as e:
         print(f"Error in handle_start_stream: {e}")
@@ -514,13 +433,6 @@ def handle_start_stream(data):
 @socketio.on('action')
 def handle_action(data):
     global latest_action
-    sid = request.sid
-    
-    # Only accept actions from the active user
-    with user_lock:
-        if active_user_sid != sid:
-            return  # Silently ignore actions from non-active users
-    
     action = int(data.get('action', 1))
     with stream_lock:
         latest_action = action
@@ -528,24 +440,6 @@ def handle_action(data):
 
 @socketio.on('stop_stream')
 def handle_stop_stream():
-    global active_user_sid
-    sid = request.sid
-    
-    # Only the active user can stop the stream
-    with user_lock:
-        if active_user_sid != sid:
-            return  # Silently ignore stop requests from non-active users
-        # Release the active user slot
-        print(f'User {sid} stopped stream and released slot')
-        active_user_sid = None
-    
-    # Notify all clients that server is now available
-    socketio.emit('server_status', {
-        'ready': server_ready,
-        'busy': False,
-        'is_active_user': False
-    })
-    
     print('Stopping stream')
     stop_stream()
 
