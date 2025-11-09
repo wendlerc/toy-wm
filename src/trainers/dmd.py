@@ -137,7 +137,8 @@ def train(cfg, dataloader,
         real_score = x_pred - real_vel 
         fake_score = x_pred - fake_vel 
 
-        gen_loss = 0.5*F.mse_loss(x_t[batch_indices, frame_ids], x_t_nograd[batch_indices, frame_ids] - (real_score[batch_indices, frame_ids].detach() - fake_score[batch_indices, frame_ids].detach()))
+        gen_loss = 0.5*((x_pred - x_pred.detach() + (real_score.detach() - fake_score.detach()))[batch_indices, frame_ids]**2).mean()
+
         gen_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(gen.parameters(), 1.0)
