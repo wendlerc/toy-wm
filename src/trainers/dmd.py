@@ -150,16 +150,27 @@ def train(cfg, dataloader,
         wandb.log({"fake_lr": fake_sched.get_last_lr()})
         for _ in range(n_fake_updates-1): #TODO this needs to be fixed to be the same as above
             fake_opt.zero_grad()
+            frames, actions = next(iterator)
+            actions += 1
+            frames[:, 1:] = frames[:, :-1]
+            frames[:, 0] = 0
+            frames = frames.to(device)
+            actions[:, 1:] = actions[:, :-1] 
+            actions[:, :1] = 0
+            mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
+            actions[mask] = 0
+            actions = actions.to(device)
+
+            batch_indices = t.arange(frames.shape[0], device=device)
+            frame_indices = t.arange(frames.shape[1], device=device)[None, :]  # (1, T)
             frame_ids = t.randint(0, frames.shape[1], (frames.shape[0],), device=device, dtype=t.int32)
             gen_ts = (frame_indices >= frame_ids[:, None]).to(dtype)  # (B, T)
 
-            actions = actions.to(device)
             z = t.randn_like(frames, device=device, dtype=dtype)
             x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
             v_pred = gen(x_inp, actions, gen_ts)
             x_pred = z + v_pred
             
-            # compute dmd gradient
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             x_t = x_pred - ts[:,:,None,None,None]*v_pred 
             x_t_nograd = x_t.detach()
@@ -167,6 +178,8 @@ def train(cfg, dataloader,
 
             fake_loss = F.mse_loss(fake_vel[batch_indices, frame_ids], v_pred[batch_indices, frame_ids].detach())
             fake_loss.backward()
+            if clipping:
+                t.nn.utils.clip_grad_norm_(fake_v.parameters(), 1.0)
             fake_opt.step()
             fake_sched.step()
             wandb.log({"fake_loss": fake_loss.item()})
