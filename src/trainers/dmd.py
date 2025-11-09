@@ -188,8 +188,11 @@ def train(cfg, dataloader,
         pbar.set_postfix_str(f'loss_gen {gen_loss.item():.4f} loss_fake {fake_loss.item():.4f}')
 
         if step % 100 == 0 and pred2frame is not None:
-            checkpoint_manager.save(metric=gen_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
-            frame_preds = x_pred[batch_indices, frame_ids]
-            frames_sampled = pred2frame(frame_preds.detach().cpu())
-            log_video(frames_sampled)
+            with t.no_grad():
+                eval_loss = F.mse_loss(x_pred[batch_indices, frame_ids], frames[batch_indices, frame_ids])
+                wandb.log({"eval_loss":eval_loss})
+                checkpoint_manager.save(metric=eval_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
+                frame_preds = x_pred[batch_indices, frame_ids]
+                frames_sampled = pred2frame(frame_preds.detach().cpu())
+                log_video(frames_sampled)
     return gen
