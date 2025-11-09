@@ -65,7 +65,8 @@ def train(cfg, dataloader,
           n_fake_updates=5, 
           device=None, dtype=None, 
           gradient_accumulation=1,
-          pred_x0=False):
+          pred_x0=False,
+          n_steps=1):
 
 
     true_v = load_model_from_config(cfg)
@@ -126,7 +127,7 @@ def train(cfg, dataloader,
         if pred_x0:
             x_pred = gen(x_inp, actions, gen_ts)
         else:
-            x_pred = sample_with_grad(gen, x_inp, actions, num_steps=2, cfg=0.)
+            x_pred = sample_with_grad(gen, x_inp, actions, num_steps=n_steps, cfg=0.)
         v_pred = x_pred - z
         # compute dmd gradient
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
@@ -187,7 +188,7 @@ def train(cfg, dataloader,
             if pred_x0:
                 x_pred = gen(x_inp, actions, gen_ts)
             else:
-                x_pred = sample_with_grad(gen, x_inp, actions, num_steps=2, cfg=0.)
+                x_pred = sample_with_grad(gen, x_inp, actions, num_steps=n_steps, cfg=0.)
             v_pred = x_pred - z
             
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
