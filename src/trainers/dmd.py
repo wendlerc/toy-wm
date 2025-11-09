@@ -137,7 +137,7 @@ def train(cfg, dataloader,
         gen_opt.step()
         gen_sched.step()
         wandb.log({"gen_loss": gen_loss.item()})
-        wandb.log({"gen_lr": gen_sched.get_last_lr()})
+        wandb.log({"gen_lr": gen_sched.get_last_lr()[0]})
         
         # update fake_v
         fake_loss = F.mse_loss(fake_vel[batch_indices, frame_ids], v_pred[batch_indices, frame_ids].detach())
@@ -147,7 +147,7 @@ def train(cfg, dataloader,
         fake_opt.step()
         fake_sched.step()
         wandb.log({"fake_loss": fake_loss.item()})
-        wandb.log({"fake_lr": fake_sched.get_last_lr()})
+        wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
         for _ in range(n_fake_updates-1): #TODO this needs to be fixed to be the same as above
             fake_opt.zero_grad()
             frames, actions = next(iterator)
@@ -183,7 +183,7 @@ def train(cfg, dataloader,
             fake_opt.step()
             fake_sched.step()
             wandb.log({"fake_loss": fake_loss.item()})
-            wandb.log({"fake_lr": fake_sched.get_last_lr()})
+            wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
 
         pbar.set_postfix_str(f'loss_gen {gen_loss.item():.4f} loss_fake {fake_loss.item():.4f}')
 
