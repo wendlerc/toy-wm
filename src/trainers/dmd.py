@@ -60,7 +60,7 @@ def train(cfg, dataloader,
           p_pretrain=1.0,
           clipping=True,
           checkpoint_manager=None,
-          n_fake_updates=3, 
+          n_fake_updates=5, 
           device=None, dtype=None, gradient_accumulation=1):
 
 
@@ -90,6 +90,7 @@ def train(cfg, dataloader,
     gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lambda, max_steps=max_steps))
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
+    step_fake = 0
     for sidx, step in enumerate(pbar):
         #set_trace()
         try:
@@ -144,14 +145,19 @@ def train(cfg, dataloader,
         fake_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(fake_v.parameters(), 1.0)
-        if (sidx + 1) % gradient_accumulation == 0:
+        step_fake += 1
+        if (step_fake + 1) % gradient_accumulation == 0:
             wandb.log({"fake_loss": fake_loss.item()})
             wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
             fake_opt.step()
             fake_sched.step()
             fake_opt.zero_grad()
         for _ in range(n_fake_updates-1): #TODO this needs to be fixed to be the same as above
-            frames, actions = next(iterator)
+            try:
+                frames, actions = next(iterator)
+            except StopIteration:
+                iterator = iter(dataloader)
+                frames, actions = next(iterator)
             actions += 1
             frames[:, 1:] = frames[:, :-1]
             frames[:, 0] = 0
@@ -179,9 +185,10 @@ def train(cfg, dataloader,
 
             fake_loss = F.mse_loss(fake_vel[batch_indices, frame_ids], v_pred[batch_indices, frame_ids].detach())
             fake_loss.backward()
+            step_fake += 1
             if clipping:
                 t.nn.utils.clip_grad_norm_(fake_v.parameters(), 1.0)
-            if (sidx + 1) % gradient_accumulation == 0:
+            if (step_fake + 1) % gradient_accumulation == 0:
                 wandb.log({"fake_loss": fake_loss.item()})
                 wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
                 fake_opt.step()
