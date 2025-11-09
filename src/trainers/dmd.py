@@ -60,7 +60,8 @@ def train(cfg, dataloader,
           p_pretrain=1.0,
           clipping=True,
           checkpoint_manager=None,
-          n_fake_updates=5, device=None, dtype=None):
+          n_fake_updates=3, 
+          device=None, dtype=None):
 
 
     true_v = load_model_from_config(cfg)
@@ -77,14 +78,6 @@ def train(cfg, dataloader,
     true_v = t.compile(true_v)
     fake_v = t.compile(fake_v)
     gen = t.compile(gen)
-
-    z = t.randn((30,1,3,24,24), device=device, dtype=dtype)
-    gen_ts = t.ones((30, 1), device=device, dtype=dtype)
-    actions = t.tensor([[0]+29*[2]], device=device, dtype=t.int32).T
-    v_pred = gen(z, actions, gen_ts)
-    x_pred = z + v_pred            
-    frames_sampled = pred2frame(x_pred.permute(1,0,2,3,4)[:1].detach().cpu())
-    log_video(frames_sampled)
     
     device = gen.device
     dtype = gen.dtype
@@ -110,17 +103,24 @@ def train(cfg, dataloader,
         actions += 1
         frames[:, 1:] = frames[:, :-1]
         frames[:, 0] = 0
-
+        frames = frames.to(device)
         actions[:, 1:] = actions[:, :-1] 
         actions[:, :1] = 0
         mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
         actions[mask] = 0
         
         # generate a video
-        gen_ts = t.ones((frames.shape[0], frames.shape[1]), device=device, dtype=dtype)
+        # Vectorized mask creation: gen_ts is 1 where frame >= frame_id, 0 otherwise
+        frame_indices = t.arange(frames.shape[1], device=device)[None, :]  # (1, T)
+        batch_indices = t.arange(frames.shape[0], device=device)
+        
+        frame_ids = t.randint(0, frames.shape[1], (frames.shape[0],), device=device, dtype=t.int32)
+        gen_ts = (frame_indices >= frame_ids[:, None]).to(dtype)  # (B, T)
+
         actions = actions.to(device)
         z = t.randn_like(frames, device=device, dtype=dtype)
-        v_pred = gen(z, actions, gen_ts)
+        x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
+        v_pred = gen(x_inp, actions, gen_ts)
         x_pred = z + v_pred
         
         # compute dmd gradient
@@ -130,7 +130,7 @@ def train(cfg, dataloader,
         real_vel = true_v(x_t_nograd, actions, ts)
         fake_vel = fake_v(x_t_nograd, actions, ts)
 
-        gen_loss = 0.5*F.mse_loss(x_t, x_t_nograd + (real_vel.detach() - fake_vel.detach()))
+        gen_loss = 0.5*F.mse_loss(x_t[batch_indices, frame_ids], x_t_nograd[batch_indices, frame_ids] + (real_vel[batch_indices, frame_ids].detach() - fake_vel[batch_indices, frame_ids].detach()))
         gen_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(gen.parameters(), 1.0)
@@ -140,7 +140,7 @@ def train(cfg, dataloader,
         wandb.log({"gen_lr": gen_sched.get_last_lr()})
         
         # update fake_v
-        fake_loss = F.mse_loss(fake_vel, v_pred.detach())
+        fake_loss = F.mse_loss(fake_vel[batch_indices, frame_ids], v_pred[batch_indices, frame_ids].detach())
         fake_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(fake_v.parameters(), 1.0)
@@ -148,26 +148,35 @@ def train(cfg, dataloader,
         fake_sched.step()
         wandb.log({"fake_loss": fake_loss.item()})
         wandb.log({"fake_lr": fake_sched.get_last_lr()})
-        for _ in range(n_fake_updates-1):
+        for _ in range(n_fake_updates-1): #TODO this needs to be fixed to be the same as above
             fake_opt.zero_grad()
+            frame_ids = t.randint(0, frames.shape[1], (frames.shape[0],), device=device, dtype=t.int32)
+            gen_ts = (frame_indices >= frame_ids[:, None]).to(dtype)  # (B, T)
+
+            actions = actions.to(device)
             z = t.randn_like(frames, device=device, dtype=dtype)
-            v_pred = gen(z, actions, gen_ts)
-            x_pred = z + v_pred            
+            x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
+            v_pred = gen(x_inp, actions, gen_ts)
+            x_pred = z + v_pred
+            
+            # compute dmd gradient
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
-            x_t = x_pred - ts[:,:,None,None,None]*v_pred
+            x_t = x_pred - ts[:,:,None,None,None]*v_pred 
             x_t_nograd = x_t.detach()
             fake_vel = fake_v(x_t_nograd, actions, ts)
-            fake_loss = F.mse_loss(fake_vel, v_pred.detach())
+
+            fake_loss = F.mse_loss(fake_vel[batch_indices, frame_ids], v_pred[batch_indices, frame_ids].detach())
             fake_loss.backward()
             fake_opt.step()
             fake_sched.step()
-            wandb.log({"fake_loss":fake_loss.item()})
+            wandb.log({"fake_loss": fake_loss.item()})
             wandb.log({"fake_lr": fake_sched.get_last_lr()})
 
         pbar.set_postfix_str(f'loss_gen {gen_loss.item():.4f} loss_fake {fake_loss.item():.4f}')
 
         if step % 100 == 0 and pred2frame is not None:
             checkpoint_manager.save(metric=gen_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
-            frames_sampled = pred2frame(x_pred[:1].detach().cpu())
+            frame_preds = x_pred[batch_indices, frame_ids]
+            frames_sampled = pred2frame(frame_preds.detach().cpu())
             log_video(frames_sampled)
     return gen

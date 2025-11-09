@@ -12,7 +12,9 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/rich-meadow-488/ckpt-step=003700-metric=0.00309512.pt"
+  checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
+  #"experiments/rich-meadow-488/model.pt"
+  # "experiments/rich-meadow-488/ckpt-step=003700-metric=0.00309512.pt"
   #checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
   #checkpoint: "experiments/glad-water-486/model.pt"
   #checkpoint: "experiments/dutiful-river-427/ckpt-step=011600-metric=0.00229805.pt"
