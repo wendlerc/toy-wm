@@ -1,1 +1,1 @@
-from .sampling import sample
+from .sampling import sample, sample_with_grad

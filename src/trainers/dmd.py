@@ -19,6 +19,7 @@ from functools import partial
 from muon import SingleDeviceMuonWithAuxAdam
 
 from ..utils import log_video, load_model_from_config
+from ..inference import sample, sample_with_grad
 
 def get_muon(model, lr1, lr2, betas, weight_decay):
     body_weights = list(model.blocks.parameters())
@@ -53,6 +54,7 @@ def lr_lambda(current_step, max_steps, warmup_steps=100):
         return float(current_step) / float(max(1, warmup_steps))
     progress = float(current_step - warmup_steps) / float(max(1, max_steps - warmup_steps))
     return 0.5 * (1.0 + math.cos(math.pi * progress))
+
 
 def train(cfg, dataloader, 
           pred2frame=None, 
@@ -123,11 +125,9 @@ def train(cfg, dataloader,
         x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
         if pred_x0:
             x_pred = gen(x_inp, actions, gen_ts)
-            v_pred = x_pred - z
         else:
-            v_pred = gen(x_inp, actions, gen_ts)
-            x_pred = z + v_pred
-        
+            x_pred = sample_with_grad(gen, x_inp, actions, num_steps=2, cfg=0.)
+        v_pred = x_pred - z
         # compute dmd gradient
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
         x_t = x_pred - ts[:,:,None,None,None]*v_pred 
@@ -185,10 +185,9 @@ def train(cfg, dataloader,
             x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
             if pred_x0:
                 x_pred = gen(x_inp, actions, gen_ts)
-                v_pred = x_pred - z
             else:
-                v_pred = gen(x_inp, actions, gen_ts)
-                x_pred = z + v_pred
+                x_pred = sample_with_grad(gen, x_inp, actions, num_steps=2, cfg=0.)
+            v_pred = x_pred - z
             
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             x_t = x_pred - ts[:,:,None,None,None]*v_pred 
@@ -211,9 +210,14 @@ def train(cfg, dataloader,
 
         if step % 100 == 0 and pred2frame is not None:
             with t.no_grad():
+                teacher_sample = sample(true_v, x_inp, actions, num_steps=4)
+                student_teacher_loss = F.mse_loss(teacher_sample[batch_indices, frame_ids], x_pred[batch_indices, frame_ids])
                 eval_loss = F.mse_loss(x_pred[batch_indices, frame_ids], frames[batch_indices, frame_ids])
-                wandb.log({"eval_loss":eval_loss})
-                checkpoint_manager.save(metric=eval_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
+                teacher_loss = F.mse_loss(teacher_sample[batch_indices, frame_ids], frames[batch_indices, frame_ids])
+                wandb.log({"eval_loss":eval_loss.item()})
+                wandb.log({"teacher_loss":teacher_loss.item()})
+                wandb.log({"student_teacher_loss":student_teacher_loss.item()})
+                checkpoint_manager.save(metric=student_teacher_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
                 frame_preds = x_pred[batch_indices, frame_ids]
                 frames_sampled = pred2frame(frame_preds.detach().cpu())
                 log_video(frames_sampled)
