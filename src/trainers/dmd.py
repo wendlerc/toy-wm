@@ -61,7 +61,9 @@ def train(cfg, dataloader,
           clipping=True,
           checkpoint_manager=None,
           n_fake_updates=5, 
-          device=None, dtype=None, gradient_accumulation=1):
+          device=None, dtype=None, 
+          gradient_accumulation=1,
+          pred_x0=False):
 
 
     true_v = load_model_from_config(cfg)
@@ -119,8 +121,12 @@ def train(cfg, dataloader,
         actions = actions.to(device)
         z = t.randn_like(frames, device=device, dtype=dtype)
         x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
-        v_pred = gen(x_inp, actions, gen_ts)
-        x_pred = z + v_pred
+        if pred_x0:
+            x_pred = gen(x_inp, actions, gen_ts)
+            v_pred = x_pred - z
+        else:
+            v_pred = gen(x_inp, actions, gen_ts)
+            x_pred = z + v_pred
         
         # compute dmd gradient
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
@@ -128,8 +134,10 @@ def train(cfg, dataloader,
         x_t_nograd = x_t.detach()
         real_vel = true_v(x_t_nograd, actions, ts)
         fake_vel = fake_v(x_t_nograd, actions, ts)
+        real_score = x_pred - real_vel 
+        fake_score = x_pred - fake_vel 
 
-        gen_loss = 0.5*F.mse_loss(x_t[batch_indices, frame_ids], x_t_nograd[batch_indices, frame_ids] + (real_vel[batch_indices, frame_ids].detach() - fake_vel[batch_indices, frame_ids].detach()))
+        gen_loss = 0.5*F.mse_loss(x_t[batch_indices, frame_ids], x_t_nograd[batch_indices, frame_ids] - (real_score[batch_indices, frame_ids].detach() - fake_score[batch_indices, frame_ids].detach()))
         gen_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(gen.parameters(), 1.0)
@@ -175,8 +183,12 @@ def train(cfg, dataloader,
 
             z = t.randn_like(frames, device=device, dtype=dtype)
             x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
-            v_pred = gen(x_inp, actions, gen_ts)
-            x_pred = z + v_pred
+            if pred_x0:
+                x_pred = gen(x_inp, actions, gen_ts)
+                v_pred = x_pred - z
+            else:
+                v_pred = gen(x_inp, actions, gen_ts)
+                x_pred = z + v_pred
             
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             x_t = x_pred - ts[:,:,None,None,None]*v_pred 
