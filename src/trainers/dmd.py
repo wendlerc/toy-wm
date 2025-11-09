@@ -61,7 +61,7 @@ def train(cfg, dataloader,
           clipping=True,
           checkpoint_manager=None,
           n_fake_updates=3, 
-          device=None, dtype=None):
+          device=None, dtype=None, gradient_accumulation=1):
 
 
     true_v = load_model_from_config(cfg)
@@ -90,10 +90,8 @@ def train(cfg, dataloader,
     gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lambda, max_steps=max_steps))
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
-    for step in pbar:
+    for sidx, step in enumerate(pbar):
         #set_trace()
-        fake_opt.zero_grad()
-        gen_opt.zero_grad()
         try:
             frames, actions = next(iterator)
         except StopIteration:
@@ -134,22 +132,25 @@ def train(cfg, dataloader,
         gen_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(gen.parameters(), 1.0)
-        gen_opt.step()
-        gen_sched.step()
-        wandb.log({"gen_loss": gen_loss.item()})
-        wandb.log({"gen_lr": gen_sched.get_last_lr()[0]})
+        if (sidx + 1) % gradient_accumulation == 0:
+            wandb.log({"gen_loss": gen_loss.item()})
+            wandb.log({"gen_lr": gen_sched.get_last_lr()[0]})
+            gen_opt.step()
+            gen_sched.step()
+            gen_opt.zero_grad()
         
         # update fake_v
         fake_loss = F.mse_loss(fake_vel[batch_indices, frame_ids], v_pred[batch_indices, frame_ids].detach())
         fake_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(fake_v.parameters(), 1.0)
-        fake_opt.step()
-        fake_sched.step()
-        wandb.log({"fake_loss": fake_loss.item()})
-        wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
-        for _ in range(n_fake_updates-1): #TODO this needs to be fixed to be the same as above
+        if (sidx + 1) % gradient_accumulation == 0:
+            wandb.log({"fake_loss": fake_loss.item()})
+            wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
+            fake_opt.step()
+            fake_sched.step()
             fake_opt.zero_grad()
+        for _ in range(n_fake_updates-1): #TODO this needs to be fixed to be the same as above
             frames, actions = next(iterator)
             actions += 1
             frames[:, 1:] = frames[:, :-1]
@@ -180,10 +181,12 @@ def train(cfg, dataloader,
             fake_loss.backward()
             if clipping:
                 t.nn.utils.clip_grad_norm_(fake_v.parameters(), 1.0)
-            fake_opt.step()
-            fake_sched.step()
-            wandb.log({"fake_loss": fake_loss.item()})
-            wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
+            if (sidx + 1) % gradient_accumulation == 0:
+                wandb.log({"fake_loss": fake_loss.item()})
+                wandb.log({"fake_lr": fake_sched.get_last_lr()[0]})
+                fake_opt.step()
+                fake_sched.step()
+                fake_opt.zero_grad()
 
         pbar.set_postfix_str(f'loss_gen {gen_loss.item():.4f} loss_fake {fake_loss.item():.4f}')
 
