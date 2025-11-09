@@ -12,6 +12,7 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
+  #checkpoint: "experiments/azure-glitter-510/ckpt-step=000100-metric=0.00780431.pt"
   checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
   #"experiments/rich-meadow-488/model.pt"
   # "experiments/rich-meadow-488/ckpt-step=003700-metric=0.00309512.pt"
