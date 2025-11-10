@@ -34,6 +34,7 @@ train:
   gradient_accumulation: 4
   pred_x0: false
   n_steps: 1
+  dtype: bf16
 
 wandb:
   name: null

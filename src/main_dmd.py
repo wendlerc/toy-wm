@@ -18,7 +18,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config)
-    dtype = t.float32
+    if "dtype" in cfg.train and cfg.train.dtype == "bf16":
+        dtype = t.bfloat16
+    else:
+        dtype = t.float32
     cmodel = cfg.model
     ctrain = cfg.train
     assert cmodel.checkpoint is not None, "DMD requires a checkpoint."
@@ -34,13 +37,13 @@ if __name__ == "__main__":
     os.makedirs(save_dir, exist_ok=True)
     # Detect MPS (Apple Silicon) or CUDA if available
     if t.backends.mps.is_available():
-        device = t.device("mps")
+        device = "mps" # t.device("mps")
         print("Using device: MPS")
     elif t.cuda.is_available():
-        device = t.device("cuda")
+        device = "cuda" # t.device("cuda")
         print("Using device: CUDA")
     else:
-        device = t.device("cpu")
+        device = "cpu" # t.device("cpu")
         print("Using device: CPU")
 
     loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom

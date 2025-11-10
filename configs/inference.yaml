@@ -12,8 +12,11 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  #checkpoint: "experiments/azure-glitter-510/ckpt-step=000100-metric=0.00780431.pt"
   checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
+  # "experiments/polished-paper-531/model.pt"
+  #"experiments/polished-paper-531/ckpt-step=000200-metric=0.00251065.pt"
+  #"experiments/polished-paper-531/ckpt-step=000800-metric=0.00450636.pt"
+  #checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
   # few frame 2-step distilled model experiments/smart-waterfall-528/model.pt
   # few frame 1-step distilled model experiments/blooming-flower-530/model.pt
   #"experiments/rich-meadow-488/model.pt"
