@@ -1,6 +1,7 @@
 # TODOs
-- use kv-cached implementation for autoregressive dmd loop
+- host the demo somewhere with less interference
 - add a better metric like FID for tracking dmd progress
+- add EMAs to the training
 - add flash or flex attention 
 - bigger dataset
 - clean up the repo

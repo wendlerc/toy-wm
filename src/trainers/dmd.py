@@ -65,6 +65,7 @@ def train(student_cfg, teacher_cfg, dataloader,
           device=None, dtype=None, 
           clamp_pred = False,
           gradient_accumulation=1,
+          lambda_dmd = 1.,
           warmup_steps=100):
 
 
@@ -124,10 +125,8 @@ def train(student_cfg, teacher_cfg, dataloader,
             x_t_nograd = x_t.detach()
             fake_vel = fake_v(x_t_nograd, actions, ts)
             real_vel = true_v(x_t_nograd, actions, ts)
-            real_score = x_pred - real_vel 
-            fake_score = x_pred - fake_vel 
             # here we smuggle in the DMD gradient via autograd; importantly we minimize wrt this gradient which brings in an additional negative sign in addition to eq (2) in https://arxiv.org/abs/2311.18828
-            gen_loss = 0.5*((x_pred - x_pred.detach() + (real_score.detach() - fake_score.detach()))**2).mean()
+            gen_loss = 0.5*((x_pred - x_pred.detach() + lambda_dmd*(real_vel.detach() - fake_vel.detach()))**2).mean()
         if sidx > 0:
             gen_loss.backward()
             if clipping:
