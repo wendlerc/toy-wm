@@ -63,6 +63,7 @@ def train(student_cfg, teacher_cfg, dataloader,
           checkpoint_manager=None,
           n_fake_updates=5, 
           device=None, dtype=None, 
+          clamp_pred = False,
           gradient_accumulation=1):
 
 
@@ -111,6 +112,8 @@ def train(student_cfg, teacher_cfg, dataloader,
             x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
             v_pred = gen(x_inp, actions, gen_ts)
             x_pred = x_inp + gen_ts[:,:,None,None,None]*v_pred
+            if clamp_pred:
+                x_pred = t.clamp(x_pred, -1.0, 1.0)
             v_pred = x_pred - z
             # compute dmd gradient
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
@@ -169,7 +172,8 @@ def train(student_cfg, teacher_cfg, dataloader,
                 with t.no_grad():
                     v_pred = gen(x_inp, actions, gen_ts)
                 x_pred = x_inp + gen_ts[:,:,None,None,None]*v_pred
-
+                if clamp_pred:
+                    x_pred = t.clamp(x_pred, -1.0, 1.0)
                 # fake velocity            
                 ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
                 x_t = x_pred - ts[:,:,None,None,None]*v_pred 

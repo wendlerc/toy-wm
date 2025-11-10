@@ -59,7 +59,8 @@ if __name__ == "__main__":
                   lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
                   weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
                   clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
-                  device=device, dtype=dtype, gradient_accumulation=ctrain.gradient_accumulation)
+                  device=device, dtype=dtype, gradient_accumulation=ctrain.gradient_accumulation,
+                  clamp_pred=ctrain.clamp_pred)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))
