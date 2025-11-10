@@ -123,10 +123,15 @@ def train(student_cfg, teacher_cfg, dataloader,
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             x_t = x_pred - ts[:,:,None,None,None]*v_pred # does it matter that we reuse the noise from the generation step here?
             x_t_nograd = x_t.detach()
-            fake_vel = fake_v(x_t_nograd, actions, ts)
-            real_vel = true_v(x_t_nograd, actions, ts)
+            fake_vel = fake_v(x_t_nograd, actions, ts).double()
+            real_vel = true_v(x_t_nograd, actions, ts).double()
+            fake_x = x_t_nograd.double() + ts[:,:,None,None,None]*fake_vel.double()
+            real_x = x_t_nograd.double() + ts[:,:,None,None,None]*real_vel.double()
+            # get scores using Tweedie's formula
+            #fake_score = ((ts[:,:,None,None,None] - 1) * fake_vel - x_t_nograd) / ts[:,:,None,None,None]
+            #real_score = ((ts[:,:,None,None,None] - 1) * real_vel - x_t_nograd) / ts[:,:,None,None,None]
             # here we smuggle in the DMD gradient via autograd; importantly we minimize wrt this gradient which brings in an additional negative sign in addition to eq (2) in https://arxiv.org/abs/2311.18828
-            gen_loss = 0.5*((x_pred - x_pred.detach() - lambda_dmd*(real_vel.detach() - fake_vel.detach()))**2).mean()
+            gen_loss = 0.5*((x_pred.double() - x_pred.detach().double() - lambda_dmd*(real_x.detach() - fake_x.detach()))**2).mean()
         if sidx > 0:
             gen_loss.backward()
             if clipping:
@@ -139,7 +144,7 @@ def train(student_cfg, teacher_cfg, dataloader,
                 gen_opt.zero_grad()
         
         # update fake_v
-        fake_loss = F.mse_loss(fake_vel, v_pred.detach())
+        fake_loss = F.mse_loss(fake_vel, v_pred.detach().double())
         fake_loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(fake_v.parameters(), 10.0)
