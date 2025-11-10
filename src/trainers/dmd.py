@@ -126,7 +126,7 @@ def train(student_cfg, teacher_cfg, dataloader,
             fake_vel = fake_v(x_t_nograd, actions, ts)
             real_vel = true_v(x_t_nograd, actions, ts)
             # here we smuggle in the DMD gradient via autograd; importantly we minimize wrt this gradient which brings in an additional negative sign in addition to eq (2) in https://arxiv.org/abs/2311.18828
-            gen_loss = 0.5*((x_pred - x_pred.detach() + lambda_dmd*(real_vel.detach() - fake_vel.detach()))**2).mean()
+            gen_loss = 0.5*((x_pred - x_pred.detach() - lambda_dmd*(real_vel.detach() - fake_vel.detach()))**2).mean()
         if sidx > 0:
             gen_loss.backward()
             if clipping:
