@@ -131,6 +131,7 @@ def train(student_cfg, teacher_cfg, dataloader,
             #fake_score = ((ts[:,:,None,None,None] - 1) * fake_vel - x_t_nograd) / ts[:,:,None,None,None]
             #real_score = ((ts[:,:,None,None,None] - 1) * real_vel - x_t_nograd) / ts[:,:,None,None,None]
             # here we smuggle in the DMD gradient via autograd; importantly we minimize wrt this gradient which brings in an additional negative sign in addition to eq (2) in https://arxiv.org/abs/2311.18828
+            # all of the variants are different rescaled versions of real_vel - fake_vel...
             gen_loss = 0.5*((x_pred.double() - x_pred.detach().double() - lambda_dmd*(real_x.detach() - fake_x.detach()))**2).mean()
         if sidx > 0:
             gen_loss.backward()
