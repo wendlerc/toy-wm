@@ -13,6 +13,8 @@ model:
   bidirectional: false
   nocompile: false
   checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
+  # "experiments/dulcet-disco-547/ckpt-step=000800-metric=0.00384521.pt"
+  #"experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
   # "experiments/polished-paper-531/model.pt"
   #"experiments/polished-paper-531/ckpt-step=000200-metric=0.00251065.pt"
   #"experiments/polished-paper-531/ckpt-step=000800-metric=0.00450636.pt"

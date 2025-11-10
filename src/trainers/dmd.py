@@ -56,26 +56,23 @@ def lr_lambda(current_step, max_steps, warmup_steps=100):
     return 0.5 * (1.0 + math.cos(math.pi * progress))
 
 
-def train(cfg, dataloader, 
+def train(student_cfg, teacher_cfg, dataloader, 
           pred2frame=None, 
           lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, 
-          p_pretrain=1.0,
           clipping=True,
           checkpoint_manager=None,
           n_fake_updates=5, 
           device=None, dtype=None, 
-          gradient_accumulation=1,
-          pred_x0=False,
-          n_steps=1):
+          gradient_accumulation=1):
 
 
-    true_v = load_model_from_config(cfg)
-    fake_v = load_model_from_config(cfg)
-    gen = load_model_from_config(cfg)
+    true_v = load_model_from_config(teacher_cfg)
+    fake_v = load_model_from_config(teacher_cfg)
+    gen = load_model_from_config(student_cfg)
 
-    wandb.watch(gen)
-    wandb.watch(fake_v)
-    wandb.watch(true_v)
+    wandb.watch(gen, log="all", log_freq=100)
+    wandb.watch(fake_v, log="all", log_freq=100)
+    wandb.watch(true_v, log="all", log_freq=100)
 
     true_v.to(device).to(dtype)
     fake_v.to(device).to(dtype)

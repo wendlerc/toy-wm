@@ -14,10 +14,13 @@ t.set_float32_matmul_precision("high")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()    # 0.002, 3e-5, (0.9, 0.95), 1e-5, 26000 works ok
-    parser.add_argument("--config", type=str, default="configs/config.yaml")
+    parser.add_argument("--student", type=str, default="configs/bigger_dmd.yaml")
+    parser.add_argument("--teacher", type=str, default="configs/bigger_dmd_teacher.yaml")
     args = parser.parse_args()
 
-    cfg = Config.from_yaml(args.config)
+    cfg = Config.from_yaml(args.student)
+    teacher_cfg = Config.from_yaml(args.teacher)
+
     if "dtype" in cfg.train and cfg.train.dtype == "bf16":
         dtype = t.bfloat16
     else:
@@ -25,9 +28,12 @@ if __name__ == "__main__":
     cmodel = cfg.model
     ctrain = cfg.train
     assert cmodel.checkpoint is not None, "DMD requires a checkpoint."
-
+    
     wandb.init(project=cfg.wandb.project, name=cfg.wandb.name)
     wandb.config.update(OmegaConf.to_container(cfg, resolve=True))
+    teacher_cfg_flat = OmegaConf.to_container(teacher_cfg, resolve=True)
+    teacher_cfg_prefixed = {f"teacher_{k}": v for k, v in teacher_cfg_flat.items()}
+    wandb.config.update(teacher_cfg_prefixed)
     exp_root = "experiments"
     if not os.path.exists(exp_root):
         os.makedirs(exp_root)
@@ -49,13 +55,11 @@ if __name__ == "__main__":
     loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
 
     checkpoint_manager = CheckpointManager(save_dir, k=5, mode="min", metric_name="loss")
-    p_pretrain = ctrain.p_pretrain if "p_pretrain" in ctrain else 1.0
-    model = train(args.config, loader, pred2frame=pred2frame,
+    model = train(args.student, args.teacher, loader, pred2frame=pred2frame,
                   lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
-                  weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps, p_pretrain=p_pretrain,
+                  weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
                   clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
-                  device=device, dtype=dtype, gradient_accumulation=ctrain.gradient_accumulation, 
-                  pred_x0=ctrain.pred_x0, n_steps=ctrain.n_steps)
+                  device=device, dtype=dtype, gradient_accumulation=ctrain.gradient_accumulation)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))
