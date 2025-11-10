@@ -64,7 +64,8 @@ def train(student_cfg, teacher_cfg, dataloader,
           n_fake_updates=5, 
           device=None, dtype=None, 
           clamp_pred = False,
-          gradient_accumulation=1):
+          gradient_accumulation=1,
+          warmup_steps=100):
 
 
     true_v = load_model_from_config(teacher_cfg)
@@ -84,8 +85,8 @@ def train(student_cfg, teacher_cfg, dataloader,
     fake_opt = get_muon(fake_v, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
     gen_opt = get_muon(gen, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
 
-    fake_sched = t.optim.lr_scheduler.LambdaLR(fake_opt, partial(lr_lambda, max_steps=n_fake_updates*max_steps//gradient_accumulation, warmup_steps=100*n_fake_updates//gradient_accumulation))
-    gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lambda, max_steps=max_steps//gradient_accumulation, warmup_steps=100//gradient_accumulation))
+    fake_sched = t.optim.lr_scheduler.LambdaLR(fake_opt, partial(lr_lambda, max_steps=n_fake_updates*max_steps//gradient_accumulation, warmup_steps=warmup_steps*n_fake_updates//gradient_accumulation))
+    gen_sched = t.optim.lr_scheduler.LambdaLR(gen_opt, partial(lr_lambda, max_steps=max_steps//gradient_accumulation, warmup_steps=warmup_steps//gradient_accumulation))
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     step_fake = 0

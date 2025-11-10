@@ -27,7 +27,8 @@ if __name__ == "__main__":
         dtype = t.float32
     cmodel = cfg.model
     ctrain = cfg.train
-    assert cmodel.checkpoint is not None, "DMD requires a checkpoint."
+
+    assert teacher_cfg.model.checkpoint is not None, "DMD requires a checkpoint."
     
     wandb.init(project=cfg.wandb.project, name=cfg.wandb.name)
     wandb.config.update(OmegaConf.to_container(cfg, resolve=True))
@@ -60,7 +61,7 @@ if __name__ == "__main__":
                   weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
                   clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
                   device=device, dtype=dtype, gradient_accumulation=ctrain.gradient_accumulation,
-                  clamp_pred=ctrain.clamp_pred)
+                  clamp_pred=ctrain.clamp_pred, warmup_steps=ctrain.warmup_steps)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))
