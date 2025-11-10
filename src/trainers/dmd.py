@@ -198,7 +198,7 @@ def train(student_cfg, teacher_cfg, dataloader,
                 wandb.log({"eval_loss":eval_loss.item()})
                 wandb.log({"teacher_loss":teacher_loss.item()})
                 wandb.log({"student_teacher_loss":student_teacher_loss.item()})
-                checkpoint_manager.save(metric=student_teacher_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
+                checkpoint_manager.save(metric=eval_loss.item(), step=step, model=gen, optimizer=gen_opt, scheduler=None)
                 frame_preds = x_pred
                 frames_sampled = pred2frame(frame_preds.detach().cpu())
                 log_video(frames_sampled)
