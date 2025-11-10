@@ -26,7 +26,7 @@ train:
   weight_decay: 1.0e-5
   max_steps: 4000
   batch_size: 8
-  noclip: true
+  noclip: false
   duration: 1
   fps: 30
   debug: false
