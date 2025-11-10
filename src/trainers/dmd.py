@@ -114,6 +114,8 @@ def train(student_cfg, teacher_cfg, dataloader,
             x_pred = x_inp + gen_ts[:,:,None,None,None]*v_pred
             if clamp_pred:
                 x_pred = t.clamp(x_pred, -1.0, 1.0)
+            # sample fresh noise
+            z = t.randn_like(frames, device=device, dtype=dtype)
             v_pred = x_pred - z
             # compute dmd gradient
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
@@ -174,7 +176,9 @@ def train(student_cfg, teacher_cfg, dataloader,
                 x_pred = x_inp + gen_ts[:,:,None,None,None]*v_pred
                 if clamp_pred:
                     x_pred = t.clamp(x_pred, -1.0, 1.0)
-                # fake velocity            
+                # sample fresh noise
+                z = t.randn_like(frames, device=device, dtype=dtype)
+                v_pred = x_pred - z         
                 ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
                 x_t = x_pred - ts[:,:,None,None,None]*v_pred 
                 x_t_nograd = x_t.detach()
