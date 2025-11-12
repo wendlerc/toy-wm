@@ -182,7 +182,7 @@ class KVCache(nn.Module):
 
 
 class KVCacheMine(nn.Module): # this does not work because it destroys the cache of later timesteps when the earlier ones overflow and move to the left. --> fix as an exercise.
-    def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window):
+    def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window, dtype=t.float32, device='cuda'):
         """
         This is a rolling KVCache
         """
@@ -192,19 +192,27 @@ class KVCacheMine(nn.Module): # this does not work because it destroys the cache
         self.d_head = d_head
         self.toks_per_frame = toks_per_frame
         self.n_window = n_window
-        self.size = toks_per_frame * n_window#5*n_window#(n_window + 1)
+        self.size = toks_per_frame * (n_window - 1)
         self.n_layers = n_layers
         self.curr_layer = 0
         self.global_loc = 0
         self.local_loc = 0
-        self.register_buffer('keys', t.zeros(n_layers, batch_size, self.size, n_heads, d_head))
-        self.register_buffer('values', t.zeros(n_layers, batch_size, self.size, n_heads, d_head))
+        self.curr_T = 0
+        self.T = 4
+        self.register_buffer('keys', t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
+        self.register_buffer('values', t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
     
     def get(self, layer_idx):
+        print(self.curr_T, self.curr_layer, self.local_loc, self.global_loc)
         assert layer_idx == self.curr_layer, f"layer idx should be the same as our internal counter but we got {layer_idx} and internal is {self.curr_layer}."
         return self.keys[layer_idx, :, :self.local_loc], self.values[layer_idx, :, :self.local_loc]
     
     def extend(self, layer_idx, keys, values):
+        if self.curr_T < self.T - 1:
+            self.curr_layer = (self.curr_layer + 1) % self.n_layers
+            if self.curr_layer == 0:
+                self.curr_T = (self.curr_T + 1) % self.T
+            return
         assert keys.shape == values.shape, f"keys and values shapes must match {self.keys.shape} != {self.values.shape}"
         assert layer_idx == self.curr_layer, f"layer idx should be the same as our internal counter but we got {layer_idx} and internal is {self.curr_layer}."
         assert self.local_loc <= self.size, f"the cache size should be between 0 and {self.size}"
@@ -223,6 +231,8 @@ class KVCacheMine(nn.Module): # this does not work because it destroys the cache
         self.keys[layer_idx, :, local_loc:local_loc + keys.shape[1]] = keys
         self.values[layer_idx, :, local_loc:local_loc + keys.shape[1]] = values 
         self.curr_layer = (self.curr_layer + 1) % self.n_layers
+        if self.curr_layer == 0:
+            self.curr_T = (self.curr_T + 1) % self.T
 
     def update_global_location(self, n_frames):
         self.global_loc += n_frames * self.toks_per_frame

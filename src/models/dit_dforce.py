@@ -2,7 +2,7 @@ import torch as t
 from torch import nn
 import torch.nn.functional as F
 
-from ..nn.attn import Attention, AttentionEinOps, KVCache
+from ..nn.attn import Attention, AttentionEinOps, KVCache, KVCacheMine
 from ..nn.patch import Patch, UnPatch
 from ..nn.geglu import GEGLU
 from ..nn.pe import FrameRoPE, NumericEncoding, RoPE
@@ -113,18 +113,12 @@ class CausalDit(nn.Module):
         )
         self.cache = None
     
-    def activate_caching(self, batch_size, max_frames=None, cache_rope=False):
+    def activate_caching(self, batch_size):
         self.cache = KVCache(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
-        if max_frames is not None:
-            self.rope_seq = RoPE(self.d_head, max_frames*self.toks_per_frame, C=self.rope_C)
-            print(self.rope_seq.sins.shape, self.rope_seq.coss.shape)
-            self.rope_seq.to(self.device)
-            self.rope_seq.to(self.dtype)
-            for idx, block in enumerate(self.blocks):
-                print("updating rope for block", idx)
-                print(self.blocks[idx].selfattn.rope.sins.shape, self.blocks[idx].selfattn.rope.coss.shape)
-                self.blocks[idx].selfattn.rope = self.rope_seq
-                print(self.blocks[idx].selfattn.rope.sins.shape, self.blocks[idx].selfattn.rope.coss.shape)
+
+    def activate_caching2(self, batch_size):
+        self.cache = KVCacheMine(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
+
     def deactivate_caching(self):
         self.cache = None
     
