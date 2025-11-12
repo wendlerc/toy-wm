@@ -28,7 +28,7 @@ class KVCache(nn.Module):
         self.d_head = d_head
         self.toks_per_frame = toks_per_frame
         self.n_window = n_window
-        self.size = (toks_per_frame * n_window) #toks_per_frame # (toks_per_frame * n_window)
+        self.size = toks_per_frame * (n_window-1) #toks_per_frame # (toks_per_frame * n_window)
 
         # Pointers / counters
         self.curr_layer = 0                 # which layer are we writing for this frame

@@ -179,7 +179,7 @@ def initialize_model():
     model.to(device)  # Move model to GPU before activating cache
     model.eval()
     
-    model.activate_caching(1, 300)  # Cache will now be created on the same device as model
+    model.activate_caching(1)  # Cache will now be created on the same device as model
 
     #model = t.compile(model)
 
