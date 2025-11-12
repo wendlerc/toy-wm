@@ -203,7 +203,6 @@ class KVCacheMine(nn.Module): # this does not work because it destroys the cache
         self.register_buffer('values', t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
     
     def get(self, layer_idx):
-        print(self.curr_T, self.curr_layer, self.local_loc, self.global_loc)
         assert layer_idx == self.curr_layer, f"layer idx should be the same as our internal counter but we got {layer_idx} and internal is {self.curr_layer}."
         return self.keys[layer_idx, :, :self.local_loc], self.values[layer_idx, :, :self.local_loc]
     
