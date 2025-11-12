@@ -388,11 +388,11 @@ def start_stream(n_steps=8, cfg=0.0, fps=30, clamp=True):
         raise RuntimeError("Server not ready")
     with stream_lock:
         stop_stream()
-        target_fps = max(20, int(fps))
+        target_fps = min(20, int(fps))
         frame_index = 0
         _reset_cache_fresh()
         latest_action = 0  # first action = 0 (init)
-        stream_thread = FrameScheduler(fps=target_fps, n_steps=max(10, n_steps), cfg=cfg, clamp=clamp)
+        stream_thread = FrameScheduler(fps=target_fps, n_steps=min(10, n_steps), cfg=cfg, clamp=clamp)
         stream_running = True
         stream_thread.start()
 
@@ -488,13 +488,13 @@ def handle_start_stream(data):
             'is_active_user': False
         }, include_self=False)
         
-        n_steps = int(data.get('n_steps', 8))
+        n_steps = min(10, int(data.get('n_steps', 8)))
         cfg = float(data.get('cfg', 0))
-        fps = int(data.get('fps', 30))
+        fps = min(20, int(data.get('fps', 30)))
         clamp = bool(data.get('clamp', True))
         print(f"Starting stream @ {fps} FPS (n_steps={n_steps}, cfg={cfg}, clamp={clamp})")
         try:
-            start_stream(n_steps=n_steps, cfg=cfg, fps=fps, clamp=clamp)
+            start_stream(n_steps=n_steps, cfg=cfg, fps=fps, clamp=clamp, clamp=clamp)
             emit('stream_started', {'status': 'ok'})
         except Exception as e:
             print(f"Error starting stream: {e}")
