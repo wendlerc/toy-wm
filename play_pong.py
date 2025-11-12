@@ -388,11 +388,11 @@ def start_stream(n_steps=8, cfg=0.0, fps=30, clamp=True):
         raise RuntimeError("Server not ready")
     with stream_lock:
         stop_stream()
-        target_fps = int(fps)
+        target_fps = max(20, int(fps))
         frame_index = 0
         _reset_cache_fresh()
         latest_action = 0  # first action = 0 (init)
-        stream_thread = FrameScheduler(fps=target_fps, n_steps=n_steps, cfg=cfg, clamp=clamp)
+        stream_thread = FrameScheduler(fps=target_fps, n_steps=max(10, n_steps), cfg=cfg, clamp=clamp)
         stream_running = True
         stream_thread.start()
 
