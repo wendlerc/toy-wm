@@ -494,7 +494,7 @@ def handle_start_stream(data):
         clamp = bool(data.get('clamp', True))
         print(f"Starting stream @ {fps} FPS (n_steps={n_steps}, cfg={cfg}, clamp={clamp})")
         try:
-            start_stream(n_steps=n_steps, cfg=cfg, fps=fps, clamp=clamp, clamp=clamp)
+            start_stream(n_steps=n_steps, cfg=cfg, fps=fps, clamp=clamp)
             emit('stream_started', {'status': 'ok'})
         except Exception as e:
             print(f"Error starting stream: {e}")
