@@ -181,6 +181,13 @@ def initialize_model():
     model.eval()
     
     cache = model.create_cache(1)  # Cache will now be created on the same device as model
+    
+    # Configure dynamo to prevent recompilation from cache state changes
+    # allow_unspec_int_on_nn_module prevents recompilation when cache pointer attributes
+    # (local_loc, _write_ptr) change between frames
+    t._dynamo.config.allow_unspec_int_on_nn_module = True
+    t._dynamo.config.cache_size_limit = 128  # Increased to handle cache state changes
+    
     model = t.compile(model)
 
 
@@ -225,12 +232,18 @@ def initialize_model():
     globals()["step_once"] = _step
     print("Mode: eager (no torch.compile)")
 
-    # Warmup
+    # Warmup - need enough frames to trigger cache wrap-around to prevent recompilation at frame 30
+    # Cache wraps after n_window frames (30), so we warm up with 35+ frames to ensure both
+    # code paths in cache.get() (contiguous slice and wrap-around concatenation) are compiled
     _reset_cache_fresh()
+    print("Warming up model (including cache wrap-around path)...")
     with t.inference_mode(), t.autocast(device_type="cuda", dtype=t.bfloat16):
-        for _ in range(4):
+        for i in range(35):  # Warm up enough to trigger cache wrap-around
             with log_step_debug(action_tensor=action_buf, noise_tensor=noise_buf):
                 _ = step_once(model, action_scalar_long=1, n_steps=4, cfg=0.0, clamp=True)
+            if i == 29:
+                print(f"  Frame 30: Cache wrap-around should occur here, ensuring both code paths are compiled")
+    print("Warmup complete")
 
     server_ready = True
     print(f"Model ready on {device}")
