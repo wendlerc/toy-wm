@@ -62,6 +62,7 @@ socketio = SocketIO(
 model = None
 pred2frame = None
 device = None
+cache = None
 
 server_ready = False    # <--- readiness flag
 
@@ -151,7 +152,7 @@ def _png_base64_from_uint8(frame_uint8) -> str:
 
 
 def _reset_cache_fresh():
-    model.cache.reset()
+    cache.reset()
 
 def _broadcast_ready():
     """Tell all clients whether the server is ready."""
@@ -161,7 +162,7 @@ def _broadcast_ready():
 # Model init (pure eager) & warmup
 # --------------------------
 def initialize_model():
-    global model, pred2frame, device
+    global model, pred2frame, device, cache
     global noise_buf, action_buf, step_once, server_ready
 
     t_start = time.time()
@@ -179,8 +180,8 @@ def initialize_model():
     model.to(device)  # Move model to GPU before activating cache
     model.eval()
     
-    model.activate_caching(1)  # Cache will now be created on the same device as model
-    #model = t.compile(model)
+    cache = model.create_cache(1)  # Cache will now be created on the same device as model
+    model = t.compile(model)
 
 
     _, pred2frame_ = get_loader(duration=1, fps=30, mode='-1,1')
@@ -191,7 +192,7 @@ def initialize_model():
     action_buf = t.empty((1, 1), dtype=t.long, device=device)
 
     @_dynamo.disable
-    def _step(model_, action_scalar_long: int, n_steps: int, cfg: float, clamp: bool):
+    def _step(model_, action_scalar_long: int, n_steps: int, cfg: float, clamp: bool, cache=cache):
         # Match the notebook logic exactly: create fresh noise each time
         noise = t.randn(1, 1, 3, 24, 24, device=device)
         action_buf.fill_(int(action_scalar_long))
@@ -202,23 +203,20 @@ def initialize_model():
             f"noise wrong: { _shape(noise) }"
 
         # Debug: Check cache state before sampling
-        if model_.cache is not None:
-            cache_loc = model_.cache.local_location
+        if cache is not None:
+            cache_loc = cache.local_location
             if cache_loc == 0:
                 # Cache is empty, this should be fine for the first frame
                 pass
             elif cache_loc > 0:
                 # Check if cache has valid data
-                k_test, v_test = model_.cache.get(0)
-                if k_test.shape[1] == 0:
+                k_test, v_test = cache.get()
+                if k_test.shape[2] == 0:
                     print(f"Warning: Cache returned empty tensors at frame {frame_index}, resetting...")
                     _reset_cache_fresh()
 
         # Sample with the fresh noise (matching notebook: sample(model, noise, actions[:, aidx:aidx+1], ...))
-        z = sample(model_, noise, action_buf, num_steps=n_steps, cfg=cfg, negative_actions=None)
-        
-        # Update cache location after sample (matching notebook: model.cache.update_global_location(1))
-        model_.cache.update_global_location(1)
+        z = sample(model_, noise, action_buf, num_steps=n_steps, cfg=cfg, negative_actions=None, cache=cache)
         
         if clamp:
             z = t.clamp(z, -1, 1)
@@ -387,7 +385,7 @@ def start_stream(n_steps=8, cfg=0.0, fps=30, clamp=True):
         raise RuntimeError("Server not ready")
     with stream_lock:
         stop_stream()
-        target_fps = min(20, int(fps))
+        target_fps = min(60, int(fps))
         frame_index = 0
         _reset_cache_fresh()
         latest_action = 0  # first action = 0 (init)
@@ -489,7 +487,7 @@ def handle_start_stream(data):
         
         n_steps = min(10, int(data.get('n_steps', 8)))
         cfg = float(data.get('cfg', 0))
-        fps = min(20, int(data.get('fps', 30)))
+        fps = min(60, int(data.get('fps', 30)))
         clamp = bool(data.get('clamp', True))
         print(f"Starting stream @ {fps} FPS (n_steps={n_steps}, cfg={cfg}, clamp={clamp})")
         try:
