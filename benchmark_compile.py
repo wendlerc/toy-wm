@@ -118,9 +118,11 @@ def generate_frames(model, pred2frame, actions, step_func, n_steps=4, cfg=0.0, c
         for frame_idx in range(actions.shape[1]):
             action = int(actions[0, frame_idx].item())
             
-            # Time the step
+            # Time the step - synchronize before and after for accurate GPU timing
+            t.cuda.synchronize()  # Ensure previous operations are done
             step_start = time.perf_counter()
             z = step_func(model, action_scalar_long=action, n_steps=n_steps, cfg=cfg, clamp=clamp, device=device)
+            t.cuda.synchronize()  # Ensure GPU work is complete before measuring end time
             step_end = time.perf_counter()
             
             # Convert to frame
@@ -334,7 +336,8 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
     print(f"\nGenerating {n_frames} frames with action 1...")
     
     # Warmup (burn-in) with automatic compilation detection
-    print(f"\nRunning warmup frames (target: {burn_in_frames}, will auto-extend if compilation detected)...")
+    max_warmup_frames = 300  # Hard limit to prevent excessive warmup
+    print(f"\nRunning warmup frames (target: {burn_in_frames}, max: {max_warmup_frames}, will auto-extend if compilation detected)...")
     _reset_cache_fresh(model)
     warmup_context = t.inference_mode() if use_inference_mode else t.no_grad()
     
@@ -346,9 +349,11 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
     
     with warmup_context, t.autocast(device_type="cuda", dtype=t.bfloat16):
         i = 0
-        while i < burn_in_frames or (use_compile and compilation_detected and stable_frames_count < stable_frames_needed):
+        while (i < burn_in_frames or (use_compile and compilation_detected and stable_frames_count < stable_frames_needed)) and i < max_warmup_frames:
+            t.cuda.synchronize()  # Ensure previous operations are done
             warmup_start = time.perf_counter()
             _ = step_func(model, action_scalar_long=1, n_steps=n_steps, cfg=cfg, clamp=clamp, device=device)
+            t.cuda.synchronize()  # Ensure GPU work is complete before measuring end time
             warmup_end = time.perf_counter()
             warmup_times.append(warmup_end - warmup_start)
             
@@ -387,7 +392,11 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
         
         actual_burn_in = len(warmup_times)
         if actual_burn_in > burn_in_frames:
-            print(f"  Extended burn-in from {burn_in_frames} to {actual_burn_in} frames to ensure compilation completes")
+            if actual_burn_in >= max_warmup_frames:
+                print(f"  ⚠ Extended burn-in from {burn_in_frames} to {actual_burn_in} frames (hit max limit of {max_warmup_frames})")
+                print(f"     Compilation may not have fully stabilized - results may be unreliable")
+            else:
+                print(f"  Extended burn-in from {burn_in_frames} to {actual_burn_in} frames to ensure compilation completes")
     
     if warmup_times:
         avg_warmup = np.mean(warmup_times)
