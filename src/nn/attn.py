@@ -153,11 +153,9 @@ class KVCacheMine(nn.Module):
         return self.keys[:, :, :self.local_loc], self.values[:, :, :self.local_loc]
     
     def extend(self, keys, values):
-        if self.curr_T < self.T - 1:
-            self.curr_layer = (self.curr_layer + 1) % self.n_layers
-            if self.curr_layer == 0:
-                self.curr_T = (self.curr_T + 1) % self.T
-            return
+        """
+        this should only be called on the last denoising step respectively.
+        """
         assert keys.shape == values.shape, f"keys and values shapes must match {self.keys.shape} != {self.values.shape}"
         assert self.local_loc <= self.size, f"the cache size should be between 0 and {self.size}"
         local_loc = self.local_loc
@@ -170,8 +168,8 @@ class KVCacheMine(nn.Module):
             self.values[:, :, :local_loc] = self.values[:, :, self.toks_per_frame:local_loc+self.toks_per_frame].clone()
 
         assert local_loc + keys.shape[2] <= self.size, f"{local_loc + keys.shape[2]} out of bounds {self.size}"
-        self.keys[:, :, local_loc:local_loc + keys.shape[1]] = keys
-        self.values[:, :, local_loc:local_loc + keys.shape[1]] = values 
+        self.keys[:, :, local_loc:local_loc + keys.shape[2]] = keys
+        self.values[:, :, local_loc:local_loc + keys.shape[2]] = values 
         self.curr_layer = (self.curr_layer + 1) % self.n_layers
 
         self.global_loc += keys.shape[2]
