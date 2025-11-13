@@ -39,8 +39,12 @@ def _reset_cache_fresh(model):
     model.cache.reset()
 
 
+@_dynamo.disable
 def _step_eager(model_, action_scalar_long: int, n_steps: int, cfg: float, clamp: bool, device):
-    """Step function with dynamo disabled (original behavior)."""
+    """
+    Step function with dynamo disabled (original behavior).
+    The @_dynamo.disable decorator prevents torch.compile from optimizing this function.
+    """
     noise = t.randn(1, 1, 3, 24, 24, device=device)
     action_buf = t.empty((1, 1), dtype=t.long, device=device)
     action_buf.fill_(int(action_scalar_long))
@@ -166,7 +170,7 @@ def save_video(frames, output_path, fps=30):
 
 def benchmark_model(use_compile=False, compile_mode="default", use_inference_mode=True,
                    compile_step=True, n_frames=500, n_steps=4, cfg=0.0, 
-                   clamp=True, burn_in_frames=10, output_path=None, verbose=True):
+                   clamp=True, burn_in_frames=50, output_path=None, verbose=True):
     """
     Benchmark the model with or without torch.compile.
     
@@ -303,39 +307,100 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
     actions = t.tensor([[1] * n_frames], dtype=t.long, device=device)
     print(f"\nGenerating {n_frames} frames with action 1...")
     
-    # Warmup (burn-in)
-    print(f"\nRunning {burn_in_frames} warmup frames...")
+    # Warmup (burn-in) with automatic compilation detection
+    print(f"\nRunning warmup frames (target: {burn_in_frames}, will auto-extend if compilation detected)...")
     _reset_cache_fresh(model)
     warmup_context = t.inference_mode() if use_inference_mode else t.no_grad()
     
     warmup_times = []
+    compilation_detected = False
+    stable_frames_needed = 20  # Need 20 stable frames to consider compilation done
+    stable_frames_count = 0
+    min_burn_in = burn_in_frames
+    
     with warmup_context, t.autocast(device_type="cuda", dtype=t.bfloat16):
-        for i in range(burn_in_frames):
+        i = 0
+        while i < burn_in_frames or (use_compile and compilation_detected and stable_frames_count < stable_frames_needed):
             warmup_start = time.perf_counter()
             _ = step_func(model, action_scalar_long=1, n_steps=n_steps, cfg=cfg, clamp=clamp, device=device)
             warmup_end = time.perf_counter()
             warmup_times.append(warmup_end - warmup_start)
             
-            if verbose:
+            # Check for compilation completion
+            if use_compile and len(warmup_times) >= 20:
+                # Look at last 10 frames
+                last_10 = warmup_times[-10:]
+                last_10_avg = np.mean(last_10)
+                last_10_std = np.std(last_10)
+                last_10_cv = last_10_std / last_10_avg if last_10_avg > 0 else float('inf')
+                
+                # Check if we're seeing compilation (high variance or decreasing times)
+                if len(warmup_times) >= 30:
+                    first_10_avg = np.mean(warmup_times[:10])
+                    if first_10_avg > last_10_avg * 2.0:  # First frames much slower
+                        compilation_detected = True
+                
+                # Check if compilation is done (low variance)
+                if last_10_cv < 0.08:  # 8% coefficient of variation threshold
+                    stable_frames_count += 1
+                else:
+                    stable_frames_count = 0  # Reset if variance increases
+                
+                # If we detected compilation but haven't stabilized, continue
+                if compilation_detected and stable_frames_count < stable_frames_needed:
+                    if verbose and i % 10 == 0:
+                        print(f"  Warmup {i + 1}: {warmup_times[-1]*1000:.2f}ms (CV: {last_10_cv:.2%}, stable: {stable_frames_count}/{stable_frames_needed})")
+                elif verbose:
+                    if i < 5 or (i + 1) % 10 == 0:
+                        print(f"  Warmup {i + 1}/{burn_in_frames}: {warmup_times[-1]*1000:.2f}ms")
+            elif verbose:
                 if i < 5 or (i + 1) % 10 == 0:
                     print(f"  Warmup {i + 1}/{burn_in_frames}: {warmup_times[-1]*1000:.2f}ms")
+            
+            i += 1
+        
+        actual_burn_in = len(warmup_times)
+        if actual_burn_in > burn_in_frames:
+            print(f"  Extended burn-in from {burn_in_frames} to {actual_burn_in} frames to ensure compilation completes")
     
     if warmup_times:
         avg_warmup = np.mean(warmup_times)
-        print(f"  Warmup complete - avg: {avg_warmup*1000:.2f}ms, first: {warmup_times[0]*1000:.2f}ms, last: {warmup_times[-1]*1000:.2f}ms")
-        if use_compile and len(warmup_times) >= 3:
-            # Check if first few frames are slower (compilation happening)
-            first_3_avg = np.mean(warmup_times[:3])
-            last_3_avg = np.mean(warmup_times[-3:])
-            if first_3_avg > last_3_avg * 1.5:
-                print(f"  ⚠ First frames slower ({first_3_avg*1000:.2f}ms) than last ({last_3_avg*1000:.2f}ms) - compilation may still be happening")
+        first_5_avg = np.mean(warmup_times[:5]) if len(warmup_times) >= 5 else avg_warmup
+        last_5_avg = np.mean(warmup_times[-5:]) if len(warmup_times) >= 5 else avg_warmup
+        print(f"  Warmup complete ({len(warmup_times)} frames) - avg: {avg_warmup*1000:.2f}ms, first 5: {first_5_avg*1000:.2f}ms, last 5: {last_5_avg*1000:.2f}ms")
+        
+        if use_compile and len(warmup_times) >= 20:
+            # Final stability check
+            last_10 = warmup_times[-10:]
+            last_10_avg = np.mean(last_10)
+            last_10_std = np.std(last_10)
+            last_10_cv = last_10_std / last_10_avg if last_10_avg > 0 else float('inf')
+            
+            if compilation_detected:
+                if stable_frames_count >= stable_frames_needed:
+                    print(f"  ✓ Compilation complete - last 10 frames stable (CV: {last_10_cv:.2%}, avg: {last_10_avg*1000:.2f}ms)")
+                else:
+                    print(f"  ⚠ Compilation detected but not fully stable (CV: {last_10_cv:.2%})")
+                    print(f"     Consider increasing --burn-in (used {len(warmup_times)} frames)")
+            else:
+                # Check if compilation happened but wasn't detected
+                first_10_avg = np.mean(warmup_times[:10])
+                if first_10_avg > last_10_avg * 1.5:
+                    print(f"  ⚠ First 10 frames ({first_10_avg*1000:.2f}ms) slower than last 10 ({last_10_avg*1000:.2f}ms)")
+                    print(f"     Compilation may have occurred but wasn't detected")
+            
+            if last_10_cv < 0.1:
+                print(f"  ✓ Ready for measurement (CV: {last_10_cv:.2%})")
+            else:
+                print(f"  ⚠ High variance in last frames (CV: {last_10_cv:.2%}) - results may be unreliable")
     
     # Synchronize GPU before timing
     t.cuda.synchronize()
     
     # Generate frames and measure timing
-    print(f"\nGenerating {n_frames} frames (timing after {burn_in_frames} burn-in frames)...")
-    print(f"Note: First {burn_in_frames} frames are warmup and excluded from timing")
+    actual_burn_in_used = len(warmup_times) if warmup_times else burn_in_frames
+    print(f"\nGenerating {n_frames} frames (timing after {actual_burn_in_used} burn-in frames)...")
+    print(f"Note: First {actual_burn_in_used} frames are warmup and excluded from timing")
     
     # Enable detailed logging for compile (optional, can be verbose)
     if use_compile and verbose and False:  # Disabled by default - set to True for debugging
@@ -351,7 +416,7 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
     frames, timings = generate_frames(
         model, pred2frame, actions, step_func,
         n_steps=n_steps, cfg=cfg, clamp=clamp,
-        device=device, burn_in_frames=burn_in_frames, 
+        device=device, burn_in_frames=actual_burn_in_used, 
         use_inference_mode=use_inference_mode, verbose=verbose
     )
     t.cuda.synchronize()
@@ -402,12 +467,20 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
     if use_compile and timings:
         # Check if there's high variance (might indicate recompilation)
         cv = std_frame_time / avg_frame_time if avg_frame_time > 0 else 0
-        if cv > 0.1:
-            print(f"\n⚠ High coefficient of variation ({cv:.2%}) - may indicate recompilation or instability")
+        if cv > 0.15:  # 15% coefficient of variation threshold
+            print(f"\n⚠ High coefficient of variation ({cv:.2%}) - may indicate:")
+            print(f"   - Recompilation still happening during measurement")
+            print(f"   - Consider increasing burn-in frames (current: {burn_in_frames})")
+            print(f"   - Or compilation instability")
         
         # Check if performance degraded vs expected
         if avg_frame_time > 0.05:  # > 50ms per frame
-            print(f"⚠ Slow frame times detected - compile may not be optimizing correctly")
+            print(f"⚠ Slow frame times detected ({avg_frame_time*1000:.2f}ms) - compile may not be optimizing correctly")
+        
+        # Compare to eager baseline (rough estimate: ~37ms should be achievable)
+        if avg_frame_time > 0.05 and cv > 0.2:
+            print(f"⚠ Very high variance ({cv:.2%}) suggests compilation overhead still being measured")
+            print(f"   Recommendation: Increase --burn-in to 100+ frames")
     
     print("=" * 80)
     
@@ -424,6 +497,7 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
         'n_steps': n_steps,
         'cfg': cfg,
         'burn_in_frames': burn_in_frames,
+        'actual_burn_in_frames': actual_burn_in_used,
         'total_time': total_time,
         'avg_frame_time': avg_frame_time,
         'std_frame_time': std_frame_time,
@@ -440,7 +514,7 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
     return results, frames
 
 
-def run_all_configurations(n_frames=500, n_steps=4, cfg=0.0, burn_in_frames=10, 
+def run_all_configurations(n_frames=500, n_steps=4, cfg=0.0, burn_in_frames=50, 
                           output_dir=None, verbose=True):
     """Run benchmarks for all configurations."""
     if output_dir is None:
@@ -520,11 +594,23 @@ def run_all_configurations(n_frames=500, n_steps=4, cfg=0.0, burn_in_frames=10,
     print("\n" + "=" * 80)
     print("SUMMARY OF ALL CONFIGURATIONS")
     print("=" * 80)
-    print(f"{'Configuration':<35} {'FPS':>10} {'Avg Time (ms)':>15} {'Std (ms)':>12}")
+    print(f"{'Configuration':<40} {'FPS':>8} {'Avg (ms)':>10} {'Std (ms)':>10} {'Max FPS':>10}")
     print("-" * 80)
     for r in all_results:
-        print(f"{r['config_name']:<35} {r['fps']:>10.2f} {r['avg_frame_time']*1000:>15.2f} {r['std_frame_time']*1000:>12.2f}")
+        max_fps = 1.0 / r['min_frame_time'] if r['min_frame_time'] > 0 else 0
+        print(f"{r['config_name']:<40} {r['fps']:>8.2f} {r['avg_frame_time']*1000:>10.2f} {r['std_frame_time']*1000:>10.2f} {max_fps:>10.2f}")
     print("=" * 80)
+    
+    # Highlight best configurations
+    best_eager = max([r for r in all_results if not r['use_compile']], key=lambda x: x['fps'])
+    best_compiled = max([r for r in all_results if r['use_compile']], key=lambda x: x['fps'])
+    best_stable = max([r for r in all_results if r['use_compile'] and r['std_frame_time']/r['avg_frame_time'] < 0.1], 
+                      key=lambda x: x['fps'], default=None)
+    
+    print(f"\nBest eager: {best_eager['config_name']} ({best_eager['fps']:.2f} FPS)")
+    print(f"Best compiled: {best_compiled['config_name']} ({best_compiled['fps']:.2f} FPS)")
+    if best_stable:
+        print(f"Best stable compiled: {best_stable['config_name']} ({best_stable['fps']:.2f} FPS, CV: {best_stable['std_frame_time']/best_stable['avg_frame_time']:.2%})")
     print(f"\nFull results saved to: {summary_path}")
     print(f"GIFs saved to: {output_dir}")
     
@@ -543,7 +629,7 @@ def main():
     parser.add_argument('--frames', type=int, default=500, help='Number of frames to generate')
     parser.add_argument('--steps', type=int, default=4, help='Number of diffusion steps per frame')
     parser.add_argument('--cfg', type=float, default=0.0, help='CFG scale')
-    parser.add_argument('--burn-in', type=int, default=10, help='Number of burn-in frames')
+    parser.add_argument('--burn-in', type=int, default=50, help='Number of burn-in frames (increased default to ensure compilation completes)')
     parser.add_argument('--output', type=str, default=None, help='Output path for video (GIF or directory)')
     parser.add_argument('--compare', action='store_true', help='Run both compiled and non-compiled versions')
     parser.add_argument('--all', action='store_true', help='Run all configurations and save to experiments/bench/timestamp')
