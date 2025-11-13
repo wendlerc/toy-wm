@@ -230,13 +230,17 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
         print(f"Model device: {next(model.parameters()).device}")
         
         # Fix recompilation issue: allow dynamic integer attributes on nn.Module
-        # This prevents recompilation when cache.local_loc changes
+        # This prevents recompilation when cache.local_loc or cache._write_ptr changes
         print("\nConfiguring torch._dynamo to handle dynamic cache attributes...")
         try:
             t._dynamo.config.allow_unspec_int_on_nn_module = True
-            print("✓ Enabled allow_unspec_int_on_nn_module (prevents recompilation from cache.local_loc changes)")
+            # Increase recompile limit to handle cache state changes
+            t._dynamo.config.cache_size_limit = 128  # Default is 64
+            print("✓ Enabled allow_unspec_int_on_nn_module")
+            print("  This prevents recompilation from cache.local_loc and cache._write_ptr changes")
+            print(f"✓ Increased cache_size_limit to 128 (default: 64)")
         except Exception as e:
-            print(f"⚠ Could not set allow_unspec_int_on_nn_module: {e}")
+            print(f"⚠ Could not set dynamo config: {e}")
         
         compile_start = time.time()
         try:
@@ -254,6 +258,15 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
             print(f"Model compiled in {compile_time:.2f}s")
             print(f"Model type after compile: {type(model)}")
             
+            # Check compilation mode was applied
+            if hasattr(model, '_orig_mod'):
+                try:
+                    # Try to get the compiled function to verify mode
+                    if hasattr(model, 'forward'):
+                        print(f"  Compilation mode '{compile_mode}' applied successfully")
+                except:
+                    pass
+            
             # Check if compilation actually happened
             if hasattr(model, '_orig_mod'):
                 print("✓ Compilation wrapper detected (_orig_mod exists)")
@@ -264,6 +277,14 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
             # Compile step function if requested
             if compile_step:
                 print(f"\nCompiling step function with torch.compile (mode={compile_mode})...")
+                # Ensure allow_unspec_int_on_nn_module is still set (it should be global, but ensure it)
+                try:
+                    if not getattr(t._dynamo.config, 'allow_unspec_int_on_nn_module', False):
+                        t._dynamo.config.allow_unspec_int_on_nn_module = True
+                        print("  Re-enabled allow_unspec_int_on_nn_module for step function compilation")
+                except:
+                    pass
+                
                 step_compile_start = time.time()
                 try:
                     if compile_mode == "default":
@@ -279,6 +300,11 @@ def benchmark_model(use_compile=False, compile_mode="default", use_inference_mod
                     step_compile_time = time.time() - step_compile_start
                     print(f"Step function compiled in {step_compile_time:.2f}s")
                     print(f"Step function type after compile: {type(step_func)}")
+                    
+                    # Note: Some compile modes may not work well with step function compilation
+                    if compile_mode in ["reduce-overhead", "max-autotune"]:
+                        print(f"  ⚠ Note: {compile_mode} mode may have compatibility issues with function compilation")
+                        print(f"     If performance is poor, try 'default' mode instead")
                 except Exception as e:
                     print(f"⚠ ERROR compiling step function: {e}")
                     import traceback
