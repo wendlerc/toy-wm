@@ -20,7 +20,7 @@ class KVCache(nn.Module):
         Call `extend(layer_idx, k, v)` once per layer for the *same* frame.
         Call `update_global_location(n_frames)` once after all layers to commit the frame(s).
     """
-    def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window, *, dtype=None, device=None, enforce_layer_order=True):
+    def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window, *, dtype=None, device=None):
         super().__init__()
         self.batch_size = batch_size
         self.n_layers = n_layers
@@ -31,7 +31,6 @@ class KVCache(nn.Module):
         self.size = toks_per_frame * (n_window-1) #toks_per_frame # (toks_per_frame * n_window)
 
         # Pointers / counters
-        self.curr_layer = 0                 # which layer are we writing for this frame
         self.global_loc = 0                 # total tokens ever committed
         self.local_loc = 0                  # valid tokens in buffer (<= size)
         self._write_ptr = 0                 # ring-buffer write pointer (index of next commit position)
@@ -41,93 +40,67 @@ class KVCache(nn.Module):
         self.register_buffer('keys',   t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
         self.register_buffer('values', t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
 
-        # Misc
-        self.enforce_layer_order = enforce_layer_order
 
-    # -------------- Public API --------------
-    def get(self, layer_idx):
+    def get(self):
         """Return (K, V) for given layer in chronological order: shape (B, L, H, D) where L = local_loc."""
-        self._check_layer(layer_idx)
         if self.local_loc == 0:
             # return empty views
-            empty = self.keys[layer_idx, :, :0]
+            empty = self.keys[:, :, :0]
             return empty, empty
 
         start = (self._write_ptr - self.local_loc) % self.size
         if start + self.local_loc <= self.size:
             # contiguous slice
-            k = self.keys[layer_idx, :, start:start + self.local_loc]
-            v = self.values[layer_idx, :, start:start + self.local_loc]
+            k = self.keys[:, :, start:start + self.local_loc]
+            v = self.values[:, :, start:start + self.local_loc]
         else:
             # wrap: concatenate two slices to maintain chronological order
             first = self.size - start
             k = t.cat([
-                self.keys[layer_idx, :, start:self.size],
-                self.keys[layer_idx, :, 0:(self.local_loc - first)]
-            ], dim=1)
+                self.keys[:, :, start:self.size],
+                self.keys[:, :, 0:(self.local_loc - first)]
+            ], dim=2)
             v = t.cat([
-                self.values[layer_idx, :, start:self.size],
-                self.values[layer_idx, :, 0:(self.local_loc - first)]
-            ], dim=1)
+                self.values[:, :, start:self.size],
+                self.values[:, :, 0:(self.local_loc - first)]
+            ], dim=2)
         return k, v
 
     @t.no_grad()
-    def extend(self, layer_idx, keys, values):
+    def extend(self, keys, values):
         """
         Stage (but do not commit) tokens for the current frame for the given layer.
         Call update_global_location(n_frames) to commit after all layers wrote.
         """
         assert keys.shape == values.shape, f"keys and values shapes must match, got {keys.shape} vs {values.shape}"
-        self._check_layer(layer_idx)
 
-        # Expected shape: (B, T, H, D)
-        B, T, H, D = keys.shape
+        L, B, T, H, D = keys.shape
+        assert L == self.n_layers, f"nlayers mismatch: expected {self.n_layers}, got {L}"
         assert B == self.batch_size, f"batch mismatch: expected {self.batch_size}, got {B}"
         assert H == self.n_heads and D == self.d_head, f"heads/d_head mismatch: expected {(self.n_heads, self.d_head)}, got {(H, D)}"
         assert T > 0 and T <= self.size, f"T must be in 1..{self.size}, got {T}"
-        # Optional: if you only ever append whole frames:
-        # assert T == self.toks_per_frame, f"T must equal toks_per_frame ({self.toks_per_frame}), got {T}"
 
-        # Cast to buffer dtype/device if needed
         if keys.dtype != self.keys.dtype or keys.device != self.keys.device:
             keys = keys.to(dtype=self.keys.dtype, device=self.keys.device)
         if values.dtype != self.values.dtype or values.device != self.values.device:
             values = values.to(dtype=self.values.dtype, device=self.values.device)
 
-        # Write into the ring at the *current* write_ptr (uncommitted until update_global_location)
         i0 = self._write_ptr
         i1 = (self._write_ptr + T) % self.size
         if i0 < i1:
-            self.keys[layer_idx, :, i0:i1] = keys
-            self.values[layer_idx, :, i0:i1] = values
+            self.keys[:, :, i0:i1] = keys
+            self.values[:, :, i0:i1] = values
         else:
-            # wraps: split write
+            # wrap
             split = self.size - i0
-            self.keys[layer_idx, :, i0:self.size] = keys[:, :split]
-            self.values[layer_idx, :, i0:self.size] = values[:, :split]
-            self.keys[layer_idx, :, 0:i1] = keys[:, split:]
-            self.values[layer_idx, :, 0:i1] = values[:, split:]
+            self.keys[:, :, i0:self.size] = keys[:, :, :split]
+            self.values[:, :, i0:self.size] = values[:, :, :split]
+            self.keys[:, :, 0:i1] = keys[:, :, split:]
+            self.values[:, :, 0:i1] = values[:, :, split:]
 
-        # Advance expected layer (but do *not* advance write_ptr/local_len here)
-        self.curr_layer = (self.curr_layer + 1) % self.n_layers
-
-    @t.no_grad()
-    def update_global_location(self, n_frames):
-        """
-        Commit staged writes for n_frames (advances the ring write pointer once per frame).
-        Keep calling extend(layer_idx, ...) for each layer before you call this.
-        """
-        assert n_frames >= 0, f"n_frames must be >= 0, got {n_frames}"
-        tokens = n_frames * self.toks_per_frame
-        if tokens == 0:
-            return
-        assert tokens <= self.size, f"Cannot commit {tokens} tokens (> buffer size {self.size})."
-
-        self.global_loc += tokens
-        # Update valid length (never exceeds capacity)
-        self.local_loc = min(self.size, self.local_loc + tokens)
-        # Advance write pointer
-        self._write_ptr = (self._write_ptr + tokens) % self.size
+        self.global_loc += keys.shape[2]
+        self.local_loc = min(self.size, self.local_loc + keys.shape[2])
+        self._write_ptr = (self._write_ptr + keys.shape[2]) % self.size
 
     @t.no_grad()
     def reset(self, zero_memory: bool = True):
@@ -139,7 +112,6 @@ class KVCache(nn.Module):
             self.keys.zero_()
             self.values.zero_()
 
-    # -------------- Convenience / Introspection --------------
     @property
     def local_location(self):
         return self.local_loc
@@ -156,32 +128,9 @@ class KVCache(nn.Module):
     def dtype(self):
         return self.keys.dtype
 
-    def get_recent(self, layer_idx, last_T):
-        """Return the most recent last_T tokens for a layer (chronological)."""
-        self._check_layer(layer_idx, allow_any=True)
-        last_T = min(last_T, self.local_loc)
-        if last_T == 0:
-            empty = self.keys[layer_idx, :, :0]
-            return empty, empty
-        start = (self._write_ptr - last_T) % self.size
-        if start + last_T <= self.size:
-            k = self.keys[layer_idx, :, start:start + last_T]
-            v = self.values[layer_idx, :, start:start + last_T]
-        else:
-            first = self.size - start
-            k = t.cat([self.keys[layer_idx, :, start:self.size], self.keys[layer_idx, :, 0:(last_T - first)]], dim=1)
-            v = t.cat([self.values[layer_idx, :, start:self.size], self.values[layer_idx, :, 0:(last_T - first)]], dim=1)
-        return k, v
-
-    # -------------- Internal checks --------------
-    def _check_layer(self, layer_idx, allow_any=False):
-        assert 0 <= layer_idx < self.n_layers, f"layer_idx out of range: 0..{self.n_layers-1}, got {layer_idx}"
-        if self.enforce_layer_order and not allow_any:
-            assert layer_idx == (self.curr_layer % self.n_layers), \
-                f"Layer order mismatch: expected {self.curr_layer % self.n_layers}, got {layer_idx}"
 
 
-class KVCacheMine(nn.Module): # this does not work because it destroys the cache of later timesteps when the earlier ones overflow and move to the left. --> fix as an exercise.
+class KVCacheMine(nn.Module): 
     def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window, dtype=t.float32, device='cuda'):
         """
         This is a rolling KVCache
@@ -194,49 +143,40 @@ class KVCacheMine(nn.Module): # this does not work because it destroys the cache
         self.n_window = n_window
         self.size = toks_per_frame * (n_window - 1)
         self.n_layers = n_layers
-        self.curr_layer = 0
         self.global_loc = 0
         self.local_loc = 0
-        self.curr_T = 0
-        self.T = 4
+
         self.register_buffer('keys', t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
         self.register_buffer('values', t.zeros(n_layers, batch_size, self.size, n_heads, d_head, dtype=dtype, device=device))
     
-    def get(self, layer_idx):
-        assert layer_idx == self.curr_layer, f"layer idx should be the same as our internal counter but we got {layer_idx} and internal is {self.curr_layer}."
-        return self.keys[layer_idx, :, :self.local_loc], self.values[layer_idx, :, :self.local_loc]
+    def get(self):
+        return self.keys[:, :, :self.local_loc], self.values[:, :, :self.local_loc]
     
-    def extend(self, layer_idx, keys, values):
+    def extend(self, keys, values):
         if self.curr_T < self.T - 1:
             self.curr_layer = (self.curr_layer + 1) % self.n_layers
             if self.curr_layer == 0:
                 self.curr_T = (self.curr_T + 1) % self.T
             return
         assert keys.shape == values.shape, f"keys and values shapes must match {self.keys.shape} != {self.values.shape}"
-        assert layer_idx == self.curr_layer, f"layer idx should be the same as our internal counter but we got {layer_idx} and internal is {self.curr_layer}."
         assert self.local_loc <= self.size, f"the cache size should be between 0 and {self.size}"
         local_loc = self.local_loc
         if local_loc == self.size:
             # move to the left
-            local_loc -= keys.shape[1]
-            assert local_loc >= 0, f"the cache update {keys.shape[1]} was larger than the cache {self.size}, that's not supported for now."
+            local_loc -= keys.shape[2]
+            assert local_loc >= 0, f"the cache update {keys.shape[2]} was larger than the cache {self.size}, that's not supported for now."
             assert local_loc % self.toks_per_frame == 0, f"the number of elements in the cache {local_loc} must be a multiple of the number of tokens per frame {self.toks_per_frame}"
-            self.keys[layer_idx, :, :local_loc] = self.keys[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame].clone()
-            self.values[layer_idx, :, :local_loc] = self.values[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame].clone()
-            #self.keys[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame] = self.keys[layer_idx, :, -local_loc:].clone()
-            #self.values[layer_idx, :, self.toks_per_frame:local_loc+self.toks_per_frame] = self.values[layer_idx, :, -local_loc:].clone()
+            self.keys[:, :, :local_loc] = self.keys[:, :, self.toks_per_frame:local_loc+self.toks_per_frame].clone()
+            self.values[:, :, :local_loc] = self.values[:, :, self.toks_per_frame:local_loc+self.toks_per_frame].clone()
 
-        assert local_loc + keys.shape[1] <= self.size, f"{local_loc + keys.shape[1]} out of bounds {self.size}"
-        self.keys[layer_idx, :, local_loc:local_loc + keys.shape[1]] = keys
-        self.values[layer_idx, :, local_loc:local_loc + keys.shape[1]] = values 
+        assert local_loc + keys.shape[2] <= self.size, f"{local_loc + keys.shape[2]} out of bounds {self.size}"
+        self.keys[:, :, local_loc:local_loc + keys.shape[1]] = keys
+        self.values[:, :, local_loc:local_loc + keys.shape[1]] = values 
         self.curr_layer = (self.curr_layer + 1) % self.n_layers
-        if self.curr_layer == 0:
-            self.curr_T = (self.curr_T + 1) % self.T
 
-    def update_global_location(self, n_frames):
-        self.global_loc += n_frames * self.toks_per_frame
+        self.global_loc += keys.shape[2]
         if self.local_loc < self.size:
-            self.local_loc += n_frames * self.toks_per_frame
+            self.local_loc += keys.shape[2]
             assert self.local_loc <= self.size, f"the local loc {self.local_loc} should never be bigger than {self.size}, something went wrong."
 
     def reset(self):

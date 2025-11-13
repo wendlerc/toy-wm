@@ -36,28 +36,20 @@ class CausalBlock(nn.Module):
             nn.Linear(d_model, 6 * d_model, bias=True),
         )
     
-    def forward(self, z, cond, mask_self, cache: Optional[KVCache] = None):
+    def forward(self, z, cond, mask_self, cached_k=None, cached_v=None):
         # batch durseq1 d
         # batch durseq2 d
         mu1, sigma1, c1, mu2, sigma2, c2 = self.modulation(cond).chunk(6, dim=-1)
         residual = z
         z = modulate(self.norm1(z), mu1, sigma1)
-        if cache is not None:
-            k, v = cache.get(self.layer_idx)
-            offset = cache.global_location # this enables to include rope and ln into the cache
-            offset = 0 # this is for reapplying rope again and again to stay more similar to training
-            z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=k, v_cache=v, offset=offset)
-            cache.extend(self.layer_idx, k_new, v_new)
-        else:
-            z, _, _ = self.selfattn(z, z, mask=mask_self)
-            
+        z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=cached_k, v_cache=cached_v)            
         z = residual + c1*z
 
         residual = z
         z = modulate(self.norm2(z), mu2, sigma2)
         z = self.geglu(z)
         z = residual + c2*z
-        return z
+        return z, k_new, v_new
 
 
 class CausalDit(nn.Module):
@@ -113,19 +105,18 @@ class CausalDit(nn.Module):
         )
         self.cache = None
     
-    def activate_caching(self, batch_size):
-        self.cache = KVCache(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
+    def create_cache(self, batch_size):
+        return KVCache(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
 
-    def activate_caching2(self, batch_size):
-        self.cache = KVCacheMine(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
-
-    def deactivate_caching(self):
-        self.cache = None
+    def create_cache2(self, batch_size):
+        return KVCacheMine(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
     
     def forward(self, 
                 z: Float[Tensor, "batch dur channels height width"], 
                 actions: Float[Tensor, "batch dur"],
-                ts: Int[Tensor, "batch dur"]):
+                ts: Int[Tensor, "batch dur"],
+                cached_k: Optional[Float[Tensor, "layer batch dur seq d"]] = None,
+                cached_v: Optional[Float[Tensor, "layer batch dur seq d"]] = None):
  
         if ts.shape[1] == 1:
             ts = ts.repeat(1, z.shape[1])
@@ -147,13 +138,23 @@ class CausalDit(nn.Module):
         batch, durzr, seqzr, d = zr.shape
         zr = zr.reshape(batch, -1, d) # batch durseq d
         
-        for block in self.blocks:
-            zr = block(zr, cond, mask_self, cache=self.cache)
+        k_update = []
+        v_update = []
+        for bidx, block in enumerate(self.blocks):
+            ks = cached_k[bidx] if cached_k is not None else None 
+            vs = cached_v[bidx] if cached_v is not None else None
+            zr, k_new, v_new = block(zr, cond, mask_self, cached_k=ks, cached_v=vs)
+            if k_new is not None:
+                k_update.append(k_new.unsqueeze(0))
+                v_update.append(v_new.unsqueeze(0))
+        if len(k_update) > 0:
+            k_update = t.cat(k_update, dim=0)
+            v_update = t.cat(v_update, dim=0)
         mu, sigma = self.modulation(cond).chunk(2, dim=-1)
         zr = modulate(self.norm(zr), mu, sigma)
         zr = zr.reshape(batch, durzr, seqzr, d)
         out = self.unpatch(zr[:, :, :-self.n_registers])
-        return out # batch dur channels height width
+        return out, k_update, v_update
     
     @property
     def causal_mask(self):
