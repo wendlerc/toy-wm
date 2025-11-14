@@ -14,7 +14,11 @@ I created my current best checkpoint in a little bit of an ad-hoc way on a singl
 
 `uv run python -m src.main --config configs/bigger_1frame.yaml`
 
-Then, I continued training by updating the `checkpoint` field in `configs/bigger_30frame_causal.yaml` to start from the single-frame model. You can also train a bidirectional one using `configs/bigger_30frame.yaml` but the frame-autoregressive one is much better for the demo app because it supports KV-caching.
+Then, I continued training on sequences of 30 frames each with bidirectional attention. This is done by updating the `checkpoint` field in `configs/bigger_30frame.yaml` and running:
+
+`uv run python -m src.main --config configs/bigger_30frame.yaml`
+
+Finally, I started from the bidirectional 30 frame model to create an autoregressive on using diffusion forcing. Again update the `checkpoint` field in `configs/bigger_30frame_causal.yaml` to start from the bidirectional model. The frame autoregressive models are great for the demo app because it supports KV-caching.
 
 `uv run python -m src.main --config configs/bigger_30frame_causal.yaml`
 

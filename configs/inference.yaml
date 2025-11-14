@@ -12,7 +12,10 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/graceful-lake-595/ckpt-step=001700-metric=0.01513267.pt"
+  checkpoint: "experiments/graceful-lake-595/ckpt-step=002600-metric=0.01305500.pt"
+  #"experiments/pleasant-plasma-596/ckpt-step=038800-metric=0.00026014.pt"
+  #"experiments/devout-microwave-587/model.pt"
+  #"experiments/graceful-lake-595/ckpt-step=001700-metric=0.01513267.pt"
   #"experiments/devout-microwave-587/ckpt-step=013400-metric=0.00126181.pt"
   #"experiments/bigger_30frame_causal/pytorch_model.pt"
   #"experiments/devout-microwave-587/ckpt-step=008800-metric=0.00166038.pt"
