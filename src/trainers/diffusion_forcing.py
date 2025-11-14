@@ -56,10 +56,7 @@ def train(model, dataloader,
             iterator = iter(dataloader)
             frames, actions = next(iterator)
         
-        actions += 1
-        frames[:, 1:] = frames[:, :-1]
-        frames[:, 0] = 0
-        
+        actions += 1        
         actions[:, 1:] = actions[:, :-1] 
         actions[:, :1] = 0
         mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2

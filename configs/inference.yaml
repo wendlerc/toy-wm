@@ -12,7 +12,8 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/bigger_30frame_causal/pytorch_model.pt"
+  checkpoint: "experiments/fancy-sea-584/ckpt-step=003200-metric=0.00033609.pt"
+  #"experiments/bigger_30frame_causal/pytorch_model.pt"
 
 train:
   lr1: 0.02
