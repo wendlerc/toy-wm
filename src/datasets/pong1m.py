@@ -20,7 +20,7 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False, dro
     actions = actions[:n*fps*duration]
     actions = actions.reshape(-1, fps*duration)
     b, dur, c, h, w = frames.shape
-    
+    # preprocess
     z = rearrange(frames, "b dur c h w -> (b dur h w) c")
     mask = (z == t.tensor([6, 24, 24], dtype=z.dtype)).all(dim=1)
     z = (z.float()/255.0 - 0.5)*2
@@ -29,6 +29,13 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False, dro
     frames = z
     pred2frame = fixed2frame
 
+    actions += 1
+    actions[:, 1:] = actions[:, :-1] 
+    actions[:, :1] = 0
+    # 0... dummy
+    # 1... do nothing
+    # 2... up
+    # 3... down
     firstf = frames[0]
     firsta = actions[0]
     if debug:

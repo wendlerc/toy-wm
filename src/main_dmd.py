@@ -13,7 +13,7 @@ from .utils.checkpoint import CheckpointManager
 t.set_float32_matmul_precision("high")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()    # 0.002, 3e-5, (0.9, 0.95), 1e-5, 26000 works ok
+    parser = argparse.ArgumentParser()    
     parser.add_argument("--student", type=str, default="configs/bigger_dmd.yaml")
     parser.add_argument("--teacher", type=str, default="configs/inference.yaml")
     args = parser.parse_args()
@@ -42,16 +42,13 @@ if __name__ == "__main__":
         wandb.run.name = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_dir = os.path.join(exp_root, wandb.run.name)
     os.makedirs(save_dir, exist_ok=True)
-    # Detect MPS (Apple Silicon) or CUDA if available
+
     if t.backends.mps.is_available():
-        device = "mps" # t.device("mps")
-        print("Using device: MPS")
+        device = "mps"
     elif t.cuda.is_available():
-        device = "cuda" # t.device("cuda")
-        print("Using device: CUDA")
+        device = "cuda"
     else:
-        device = "cpu" # t.device("cpu")
-        print("Using device: CPU")
+        device = "cpu"
 
     loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
 

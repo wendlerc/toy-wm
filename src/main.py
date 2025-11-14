@@ -13,7 +13,7 @@ from .trainers.diffusion_forcing import train
 t.set_float32_matmul_precision("high")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()    # 0.002, 3e-5, (0.9, 0.95), 1e-5, 26000 works ok
+    parser = argparse.ArgumentParser()    
     parser.add_argument("--config", type=str, default="configs/config.yaml")
     args = parser.parse_args()
 
@@ -30,16 +30,13 @@ if __name__ == "__main__":
         wandb.run.name = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_dir = os.path.join(exp_root, wandb.run.name)
     os.makedirs(save_dir, exist_ok=True)
-    # Detect MPS (Apple Silicon) or CUDA if available
+
     if t.backends.mps.is_available():
-        device = t.device("mps")
-        print("Using device: MPS")
+        device = "mps"
     elif t.cuda.is_available():
-        device = t.device("cuda")
-        print("Using device: CUDA")
+        device = "cuda"
     else:
-        device = t.device("cpu")
-        print("Using device: CPU")
+        device = "cpu"
 
     loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
     frames, actions = next(iter(loader))
@@ -64,9 +61,11 @@ if __name__ == "__main__":
         print(f"Model loaded from {cmodel.checkpoint}")
     else:
         print("No checkpoint found")
-    model = model.to(device)  # Move model to device
-    model = model.to(t.float32)
-    # Apply torch compile for acceleration (PyTorch 2.0+)
+
+    dtype = t.bfloat16 if ctrain.dtype == "bf16" else t.float32
+    model = model.to(device) 
+    model = model.to(dtype)
+
     if not cmodel.nocompile:
         try:
             model = t.compile(model)
@@ -80,7 +79,8 @@ if __name__ == "__main__":
     model = train(model, loader, pred2frame=pred2frame,
                   lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
                   weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
-                  clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager)
+                  clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
+                  warmup_steps=ctrain.warmup_steps, device=device, dtype=dtype)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))

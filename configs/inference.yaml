@@ -12,7 +12,8 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/graceful-lake-595/ckpt-step=002600-metric=0.01305500.pt"
+  checkpoint: "experiments/fancy-yogurt-597/ckpt-step=005700-metric=0.00129715.pt"
+  #"experiments/graceful-lake-595/ckpt-step=002600-metric=0.01305500.pt"
   #"experiments/pleasant-plasma-596/ckpt-step=038800-metric=0.00026014.pt"
   #"experiments/devout-microwave-587/model.pt"
   #"experiments/graceful-lake-595/ckpt-step=001700-metric=0.01513267.pt"
@@ -32,7 +33,8 @@ train:
   noclip: false
   duration: 1
   fps: 1
-  debug: false
+  debug: 
+  warmup_steps: 100
 
 wandb:
   name: null

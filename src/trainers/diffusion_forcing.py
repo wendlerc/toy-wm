@@ -2,53 +2,29 @@ import torch as t
 import torch.nn.functional as F
 from tqdm import tqdm
 import wandb
-from torch.nn import functional as F
 from tqdm import tqdm
-import math
-
-from muon import SingleDeviceMuonWithAuxAdam
+from functools import partial
 
 from ..inference.sampling import sample
-from ..utils import log_video    
+from ..utils import log_video, get_muon, lr_lambda
 
 
 def train(model, dataloader, 
           pred2frame=None, 
-          lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, max_steps=1000, 
+          lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, 
+          max_steps=1000, 
+          warmup_steps=100,
           clipping=True,
-          checkpoint_manager=None):
+          checkpoint_manager=None,
+          device="cuda", dtype=t.float32):
 
-    device = model.device
-    dtype = model.dtype
-    # optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4, betas=(0.90, 0.95), weight_decay=0.01)
+    print(f"Using device: {device}, dtype: {dtype}")
+    optimizer = get_muon(model, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
+    scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, partial(lr_lambda, max_steps=max_steps, warmup_steps=warmup_steps))
 
-    body_weights = list(model.blocks.parameters())
-    other_weights = set(model.parameters()) - set(body_weights)
-
-    hidden_weights = [p for p in body_weights if p.ndim >= 2]
-    hidden_gains_biases = [p for p in body_weights if p.ndim < 2]
-    nonhidden_params = list(other_weights)
-    param_groups = [
-        dict(params=hidden_weights, use_muon=True,
-            lr=lr1, weight_decay=weight_decay),
-        dict(params=hidden_gains_biases+nonhidden_params, use_muon=False,
-            lr=lr2, betas=betas, weight_decay=weight_decay),
-    ]
-    optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
-    # Use CosineAnnealingWarmRestarts with a warmup period by combining with a LambdaLR for linear warmup.
-    # Here, we first do linear warmup for warmup_steps, then cosine annealing
-    warmup_steps = 100
-    def lr_lambda(current_step):
-        if current_step < warmup_steps:
-            return float(current_step) / float(max(1, warmup_steps))
-        # after warmup: cosine annealing from warmup_steps to max_steps
-        progress = float(current_step - warmup_steps) / float(max(1, max_steps - warmup_steps))
-        return 0.5 * (1.0 + math.cos(math.pi * progress))
-    scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
-        #set_trace()
         optimizer.zero_grad()
         try:
             frames, actions = next(iterator)
@@ -56,29 +32,32 @@ def train(model, dataloader,
             iterator = iter(dataloader)
             frames, actions = next(iterator)
         
-        actions += 1        
-        actions[:, 1:] = actions[:, :-1] 
-        actions[:, :1] = 0
         mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
         actions[mask] = 0
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
         
+        if frames.shape[1] > model.n_window:
+            print(f"Warning: frames.shape[1] > model.n_window, truncating to {model.n_window} frames")
+
         frames = frames[:, :model.n_window]
         actions = actions[:, :model.n_window]
-        frames = frames.to(device).to(dtype)
+        
+        frames = frames.to(device)
         actions = actions.to(device)
-        ts = ts[:,:model.n_window]
-        z = t.randn_like(frames, device=device, dtype=dtype)
-        x0 = frames
-        vel_true = x0 - z
-        x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
-        vel_pred, _, _ = model(x_t, actions, ts)
-        loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
-        wandb.log({"loss": loss.item()})
-        wandb.log({"lr": scheduler.get_last_lr()[0]})
+        
+        with t.autocast(device_type=device, dtype=dtype):
+            ts = ts[:,:model.n_window]
+            z = t.randn_like(frames, device=device, dtype=dtype)
+            x0 = frames
+            vel_true = x0 - z
+            x_t = x0 - ts[:, :, None, None, None] * vel_true
+            vel_pred, _, _ = model(x_t, actions, ts)
+            loss = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
+            wandb.log({"loss": loss.item()})
+            wandb.log({"lr": scheduler.get_last_lr()[0]})
         loss.backward()
         if clipping:
-            t.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            t.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
         optimizer.step()
         scheduler.step()
         pbar.set_postfix(loss=loss.item())
@@ -89,24 +68,27 @@ def train(model, dataloader,
             noise_levels = [1., 0.75, 0.5, 0.25, 0.1, 0]
             noise_losses = []
             with t.no_grad():
-                for noise_level in noise_levels:
-                    z = t.randn_like(frames, device=device, dtype=dtype)
-                    x0 = frames
-                    vel_true = x0 - z
-                    ts = noise_level * t.ones(frames.shape[0], frames.shape[1], device=device, dtype=dtype)
-                    x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
-                    vel_pred, _, _ = model(x_t, actions, ts)
-                    noise_losses.append(F.mse_loss(vel_pred, vel_true, reduction="mean"))
-                    wandb.log({f"noise:{noise_level}": noise_losses[-1].item()})
+                with t.autocast(device_type=device, dtype=dtype):
+                    for noise_level in noise_levels:
+                        z = t.randn_like(frames, device=device, dtype=dtype)
+                        x0 = frames
+                        vel_true = x0 - z
+                        ts = noise_level * t.ones(frames.shape[0], frames.shape[1], device=device, dtype=dtype)
+                        x_t = x0 - ts[:, :, None, None, None] * vel_true
+                        vel_pred, _, _ = model(x_t, actions, ts)
+                        noise_losses.append(F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean"))
+                        wandb.log({f"noise:{noise_level}": noise_losses[-1].item()})
 
 
             if frames.shape[1] == 1: 
-                z_sampled = sample(model, 
-                                   t.randn_like(frames[:30], device=device, dtype=dtype), 
-                                   actions[:30], num_steps=10)
-                z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
+                with t.autocast(device_type=device, dtype=dtype):
+                    z_sampled = sample(model, 
+                                    t.randn_like(frames[:30], device=device, dtype=dtype), 
+                                    actions[:30], num_steps=10)
+                    z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
             else:
-                z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
+                with t.autocast(device_type=device, dtype=dtype):
+                    z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             frames_sampled = pred2frame(z_sampled)
             log_video(frames_sampled)
 

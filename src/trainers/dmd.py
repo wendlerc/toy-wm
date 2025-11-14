@@ -2,51 +2,10 @@ import torch as t
 import torch.nn.functional as F
 from tqdm import tqdm
 import wandb
-
-
-from torch.nn import functional as F
-from tqdm import tqdm
-import math
 from functools import partial
 
-from muon import SingleDeviceMuonWithAuxAdam
-
-from ..utils import log_video, load_model_from_config
-from ..inference import sample, sample_with_grad
-
-def get_muon(model, lr1, lr2, betas, weight_decay):
-    body_weights = list(model.blocks.parameters())
-    body_ids = {id(p) for p in body_weights}
-    other_weights = [p for p in model.parameters() if id(p) not in body_ids]
-
-    hidden_weights = [p for p in body_weights if p.ndim >= 2]
-    hidden_gains_biases = [p for p in body_weights if p.ndim < 2]
-    nonhidden_params = list(other_weights)
-
-    param_groups = [
-        dict(
-            params=hidden_weights,
-            use_muon=True,
-            lr=lr1,
-            weight_decay=weight_decay,
-        ),
-        dict(
-            params=hidden_gains_biases + nonhidden_params,
-            use_muon=False,
-            lr=lr2,
-            betas=betas,
-            weight_decay=weight_decay,
-        ),
-    ]
-    optimizer = SingleDeviceMuonWithAuxAdam(param_groups)
-    return optimizer
-
-
-def lr_lambda(current_step, max_steps, warmup_steps=100):
-    if current_step < warmup_steps:
-        return float(current_step) / float(max(1, warmup_steps))
-    progress = float(current_step - warmup_steps) / float(max(1, max_steps - warmup_steps))
-    return 0.5 * (1.0 + math.cos(math.pi * progress))
+from ..utils import log_video, load_model_from_config, get_muon, lr_lambda
+from ..inference import sample
 
 
 def train(student_cfg, teacher_cfg, dataloader, 
@@ -90,15 +49,14 @@ def train(student_cfg, teacher_cfg, dataloader,
         except StopIteration:
             iterator = iter(dataloader)
             frames, actions = next(iterator)
-        # prep the data
-        actions += 1
-        frames[:, 1:] = frames[:, :-1]
-        frames[:, 0] = 0
-        frames = frames.to(dtype).to(device)
-        actions[:, 1:] = actions[:, :-1] 
-        actions[:, :1] = 0
+        
         mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
         actions[mask] = 0
+        if frames.shape[1] > gen.n_window:
+            print(f"Warning: frames.shape[1] > gen.n_window, truncating to {gen.n_window} frames")
+            frames = frames[:, :gen.n_window]
+            actions = actions[:, :gen.n_window]
+        frames = frames.to(device)
         actions = actions.to(device)
         with t.autocast(device_type=device, dtype=dtype):
             z = t.randn_like(frames, device=device, dtype=dtype)
@@ -119,6 +77,7 @@ def train(student_cfg, teacher_cfg, dataloader,
             real_vel, _, _ = true_v(x_t_nograd, actions, ts)
             
             gen_loss = 0.5*((x_pred.double() - x_pred.detach().double() - (real_vel.detach().double() - fake_vel.detach().double()))**2).mean()
+        
         if sidx > 0:
             gen_loss.backward()
             if clipping:
@@ -148,16 +107,11 @@ def train(student_cfg, teacher_cfg, dataloader,
             except StopIteration:
                 iterator = iter(dataloader)
                 frames, actions = next(iterator)
-            actions += 1 # all of these ops should go into the dataloader
-            frames[:, 1:] = frames[:, :-1]
-            frames[:, 0] = 0
-            frames = frames.to(dtype).to(device)
-            actions[:, 1:] = actions[:, :-1] 
-            actions[:, :1] = 0
+            
             mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
             actions[mask] = 0
             actions = actions.to(device)
-
+            frames = frames.to(device)
             # gen sample
             with t.autocast(device_type=device, dtype=dtype):
                 gen_ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))

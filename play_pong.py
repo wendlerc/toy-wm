@@ -566,5 +566,4 @@ if __name__ == '__main__':
     initialize_model()
     
     print("Starting Flask server on http://localhost:5000")
-    print("Model will load in background...")
     socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True, use_reloader=False)
