@@ -12,37 +12,19 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
-  # "experiments/dulcet-disco-547/ckpt-step=000800-metric=0.00384521.pt"
-  #"experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
-  # "experiments/polished-paper-531/model.pt"
-  #"experiments/polished-paper-531/ckpt-step=000200-metric=0.00251065.pt"
-  #"experiments/polished-paper-531/ckpt-step=000800-metric=0.00450636.pt"
-  #checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
-  # few frame 2-step distilled model experiments/smart-waterfall-528/model.pt
-  # few frame 1-step distilled model experiments/blooming-flower-530/model.pt
-  #"experiments/rich-meadow-488/model.pt"
-  # "experiments/rich-meadow-488/ckpt-step=003700-metric=0.00309512.pt"
-  #checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
-  #checkpoint: "experiments/glad-water-486/model.pt"
-  #checkpoint: "experiments/dutiful-river-427/ckpt-step=011600-metric=0.00229805.pt"
-  #checkpoint: "experiments/iconic-paper-421/ckpt-step=001600-metric=0.00471355.pt"
-  #"experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
-  #checkpoint: "experiments/frosty-sunset-395/ckpt-step=002100-metric=0.00160125.pt"
-  #checkpoint: "experiments/vivid-sea-390/ckpt-step=000700-metric=0.01958773.pt"
+  checkpoint: "experiments/bigger_30frame_causal/pytorch_model.pt"
 
 train:
-  lr1: 0.0002
-  lr2: 1.5e-6
+  lr1: 0.02
+  lr2: 3.0e-5
   betas: [0.9, 0.95]
   weight_decay: 1.0e-5
-  max_steps: 20000
-  batch_size: 16
+  max_steps: 5000
+  batch_size: 256
   noclip: false
   duration: 1
-  fps: 31
+  fps: 1
   debug: false
-  p_pretrain: 0.95
 
 wandb:
   name: null

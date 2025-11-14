@@ -2,10 +2,10 @@ import torch as t
 from torch import nn
 import torch.nn.functional as F
 
-from ..nn.attn import Attention, AttentionEinOps, KVCache, KVCacheMine
+from ..nn.attn import AttentionEinOps, KVCache, KVCacheNaive
 from ..nn.patch import Patch, UnPatch
 from ..nn.geglu import GEGLU
-from ..nn.pe import FrameRoPE, NumericEncoding, RoPE
+from ..nn.pe import NumericEncoding, RoPE
 from jaxtyping import Float, Bool, Int
 from torch import Tensor
 from typing import Optional
@@ -24,10 +24,7 @@ class CausalBlock(nn.Module):
         self.expansion = expansion
         self.n_heads = n_heads
         self.norm1 = nn.LayerNorm(d_model)
-        if t.backends.mps.is_available():
-            self.selfattn = AttentionEinOps(d_model, n_heads, rope=rope)
-        else:
-            self.selfattn = AttentionEinOps(d_model, n_heads, rope=rope) # there is a problem with flexattn i think
+        self.selfattn = AttentionEinOps(d_model, n_heads, rope=rope)
         self.norm2 = nn.LayerNorm(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
         
@@ -57,8 +54,6 @@ class CausalDit(nn.Module):
                        patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
                        n_registers=1, n_actions=4, bidirectional=False, 
                        debug=False, 
-                       legacy=False,
-                       frame_rope=False,
                        rope_C=10000,
                        rope_tmax=None):
         super().__init__()
@@ -74,21 +69,13 @@ class CausalDit(nn.Module):
         self.T = T
         self.patch_size = patch_size
         self.debug = debug
-        self.legacy = legacy
         self.bidirectional = bidirectional
-        self.frame_rope = frame_rope
         self.toks_per_frame = (height//patch_size)*(width//patch_size) + n_registers
         self.rope_C = rope_C
-        if frame_rope:
-            print("Using frame rope")
-            print(self.toks_per_frame)
-            self.rope_seq = FrameRoPE(d_model//n_heads, self.n_window, self.toks_per_frame, C=rope_C)
-            self.grid_pe = nn.Parameter(t.randn(self.toks_per_frame - n_registers, d_model) * 1/d_model**0.5)
-        else:
-            if rope_tmax is None:
-                rope_tmax = self.n_window*self.toks_per_frame
-            self.rope_seq = RoPE(d_model//n_heads, rope_tmax, C=rope_C)
-            self.grid_pe = None
+        if rope_tmax is None:
+            rope_tmax = self.n_window*self.toks_per_frame
+        self.rope_seq = RoPE(d_model//n_heads, rope_tmax, C=rope_C)
+        self.grid_pe = None
         self.rope_tmax = rope_tmax
 
         self.blocks = nn.ModuleList([CausalBlock(lidx, d_model, expansion, n_heads, rope=self.rope_seq) for lidx in range(n_blocks)])
@@ -109,7 +96,7 @@ class CausalDit(nn.Module):
         return KVCache(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
 
     def create_cache2(self, batch_size):
-        return KVCacheMine(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
+        return KVCacheNaive(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)
     
     def forward(self, 
                 z: Float[Tensor, "batch dur channels height width"], 
@@ -124,11 +111,11 @@ class CausalDit(nn.Module):
         a = self.action_emb(actions) # batch dur d
         ts_scaled = (ts * self.T).clamp(0, self.T - 1).long()
         cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
-        #print(ts_scaled.shape, a.shape, cond.shape, actions.shape)
         cond = cond.repeat_interleave(self.toks_per_frame, dim=1)
         z = self.patch(z) # batch dur seq d
         if self.grid_pe is not None:
             z = z + self.grid_pe[None, None]
+
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
         if self.bidirectional:
@@ -150,6 +137,7 @@ class CausalDit(nn.Module):
         if len(k_update) > 0:
             k_update = t.cat(k_update, dim=0)
             v_update = t.cat(v_update, dim=0)
+
         mu, sigma = self.modulation(cond).chunk(2, dim=-1)
         zr = modulate(self.norm(zr), mu, sigma)
         zr = zr.reshape(batch, durzr, seqzr, d)
@@ -159,7 +147,7 @@ class CausalDit(nn.Module):
     @property
     def causal_mask(self):
         size = self.n_window
-        m_self = t.tril(t.ones((size, size), dtype=t.int8, device=self.device)) #- t.tril(t.ones((size, size), dtype=t.int8, device=self.device), diagonal=-self.n_window)
+        m_self = t.tril(t.ones((size, size), dtype=t.int8, device=self.device)) # - t.tril(t.ones((size, size), dtype=t.int8, device=self.device), diagonal=-self.n_window) # this would be useful if we go bigger than windowxwindow
         m_self = t.kron(m_self, t.ones((self.toks_per_frame, self.toks_per_frame), dtype=t.int8, device=self.device))
         m_self = m_self.to(bool)
         return ~ m_self # we want to mask out the ones
@@ -173,8 +161,8 @@ class CausalDit(nn.Module):
         return self.parameters().__next__().dtype
 
 
-def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, frame_rope=False, C=10000):
-    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, frame_rope=frame_rope, rope_C=C)
+def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, C=10000):
+    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, rope_C=C)
 
 if __name__ == "__main__":
     print("running w/o cache")
@@ -182,21 +170,6 @@ if __name__ == "__main__":
     z = t.rand((2, 6, 3, 20, 20))
     actions = t.randint(4, (2, 6))
     ts = t.rand((2, 6))
-    out = dit(z, actions, ts)
+    out, _, _ = dit(z, actions, ts)
     print(z.shape)
     print(out.shape)
-
-    print("running w cache")
-    dit = CausalDit(20, 20, 10, 64, 5, n_blocks=2)
-    dit.activate_caching(2)
-    print(dit.cache.toks_per_frame)
-    print(dit.cache.size)
-    for i in range(30):
-        print(dit.cache.local_loc)
-        print(dit.cache.global_loc)
-        z = t.rand((2, 1, 3, 20, 20))
-        actions = t.randint(4, (2, 1))
-        ts = t.rand((2, 1))
-        out = dit(z, actions, ts)
-        print(i, z.shape)
-        print(i, out.shape)

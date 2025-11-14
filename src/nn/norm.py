@@ -10,7 +10,6 @@ class LayerNorm(nn.Module):
         self.b = nn.Parameter(t.zeros(d))
 
     def forward(self, residual: Float[Tensor, "batch dur seq d_model"]) -> Float[Tensor, "batch dur seq d_model"]:
-        # SOLUTION
         residual_mean = residual.mean(dim=-1, keepdim=True)
         residual_std = (residual.var(dim=-1, keepdim=True, unbiased=False) + self.cfg.layer_norm_eps).sqrt()
 

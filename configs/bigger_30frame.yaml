@@ -12,8 +12,7 @@ model:
   C: 5000
   bidirectional: true
   nocompile: false
-  checkpoint: "experiments/frosty-sunset-395/ckpt-step=001200-metric=0.00275456.pt"
-  #checkpoint: "experiments/vivid-sea-390/ckpt-step=000700-metric=0.01958773.pt"
+  checkpoint: null
 
 train:
   lr1: 0.02

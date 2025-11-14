@@ -130,7 +130,7 @@ class KVCache(nn.Module):
 
 
 
-class KVCacheMine(nn.Module): 
+class KVCacheNaive(nn.Module): 
     def __init__(self, batch_size, n_layers, n_heads, d_head, toks_per_frame, n_window, dtype=t.float32, device='cuda'):
         """
         This is a rolling KVCache
@@ -260,7 +260,7 @@ class AttentionEinOps(nn.Module):
                 q = self.rope(q)
                 k = self.rope(k)
             q = self.ln1(q)
-            k = self.ln2(k) # this leanrs much faster using layernorm here
+            k = self.ln2(k) # this learns much faster using layernorm here (and yes usually this is before rope)
             k_new = k
             v_new = v
 
@@ -269,153 +269,12 @@ class AttentionEinOps(nn.Module):
             attention = t.where(mask[k_cache.shape[1]:k_cache.shape[1]+q.shape[1], :k.shape[1]], self.IGNORE, attention)
         elif mask is not None:
             if attention.shape[-1] != mask.shape[-1] or attention.shape[-2] != mask.shape[-2]:
-                #print(f"Warning: attention shape {attention.shape} does not match mask shape {mask.shape}")
                 mask = mask[:attention.shape[-1], :attention.shape[-2]]
             attention = t.where(mask, self.IGNORE, attention) 
         probas = attention.softmax(dim=3)
-        #plt.imshow(probas[0, 0].cpu().numpy())
-        #plt.show()
         z = einops.einsum(probas, v, 'b n sq sk, b sk n h -> b sq n h')
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
         out = out.sum(dim=2) + self.b_O
         return out, k_new, v_new
 
 
-class Attention(nn.Module):
-    IGNORE: Float[Tensor, ""]
-
-    def __init__(self, d_model, n_heads, rope=None, use_flex_attention=False):
-        raise NotImplementedError("Attention is not implemented yet")
-        super().__init__()
-        assert d_model % n_heads == 0, f"{d_model} must be divisble by {n_heads}"
-        self.d_head = d_model // n_heads
-        d_head = self.d_head
-        self.W_Q = nn.Parameter(t.empty((n_heads, d_model, d_head)))
-        self.W_K = nn.Parameter(t.empty((n_heads, d_model, d_head)))
-        self.W_V = nn.Parameter(t.empty((n_heads, d_model, d_head)))
-        self.W_O = nn.Parameter(t.empty((n_heads, d_head, d_model)))
-        #self.b_Q = nn.Parameter(t.zeros((n_heads, d_head)))
-        #self.b_K = nn.Parameter(t.zeros((n_heads, d_head)))
-        #self.b_V = nn.Parameter(t.zeros((n_heads, d_head)))
-        #self.b_O = nn.Parameter(t.zeros((d_model)))
-        nn.init.normal_(self.W_Q, 1/d_model**0.5)
-        nn.init.normal_(self.W_K, 1/d_model**0.5)
-        nn.init.normal_(self.W_V, 1/d_model**0.5)
-        nn.init.normal_(self.W_O, 1/d_head**0.5)
-        self.register_buffer("IGNORE", t.tensor(float('-inf'), dtype=t.float32))
-        self.rope = rope
-        self.use_flex_attention = use_flex_attention
-        self.ln1 = nn.LayerNorm(d_head)
-        self.ln2 = nn.LayerNorm(d_head)
-
-
-    def forward(
-        self, 
-        x_q: Float[Tensor, "batch posq d_model"],
-        x_kv: Float[Tensor, "batch posk d_model"],
-        mask: Bool[Tensor, "posq posk"] = None, # the 1s are removed
-        k_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None, 
-        v_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None,
-    ) -> Float[Tensor, "batch posq d_model"]:
-        assert (k_cache is None and v_cache is None) or (k_cache is not None and v_cache is not None), "k_cache and v_cache go together."
-        d_head = self.d_head
-        if k_cache is not None and v_cache is not None:
-            raise NotImplementedError("kv cache not implemented yet")
-            q = einops.einsum(x, self.W_Q, 'b s d, n d h -> b s n h') 
-            k_new = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') 
-            v_new = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') 
-            k = t.cat([k_cache, k_new], dim=1)
-            v = t.cat([v_cache, v_new], dim=1)
-        else:
-            q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') 
-            k = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') 
-            v = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') 
-        
-        q = self.ln1(q)
-        k = self.ln2(k)
-        if self.rope is not None:
-            q = self.rope(q)
-            k = self.rope(k)
-        
-        # Convert to (batch, num_heads, seq_len, head_dim) format for flex_attention
-        q_perm = q.permute(0, 2, 1, 3)  # (batch, n_heads, posq, d_head)
-        k_perm = k.permute(0, 2, 1, 3)   # (batch, n_heads, posk, d_head)
-        v_perm = v.permute(0, 2, 1, 3)   # (batch, n_heads, posk, d_head)
-        
-        # Ensure tensors are contiguous to avoid flex_attention indexing bugs
-        q_perm = q_perm.contiguous()
-        k_perm = k_perm.contiguous()
-        v_perm = v_perm.contiguous()
-        
-        if self.use_flex_attention:
-            # Handle mask using score_mod if needed
-            if mask is not None:
-                # Store mask and IGNORE for use in score_mod closure
-                mask_tensor = mask  # (posq, posk)
-                ignore_val = self.IGNORE
-                def score_mod(score, b, h, q_idx, kv_idx):
-                    # score_mod operates on individual scalar scores
-                    # Apply mask: where mask is True, set to -inf
-                    # Use torch ops that work in compiled context
-                    mask_val = mask_tensor[q_idx, kv_idx]
-                    return t.where(mask_val, ignore_val, score)
-                z = flex_attention(q_perm, k_perm, v_perm, score_mod=score_mod)
-            else:
-                z = flex_attention(q_perm, k_perm, v_perm)
-        else:
-            condi = mask is None and not self.dtype == t.float32
-            with t.backends.cuda.sdp_kernel(
-                enable_flash=condi, 
-                enable_math=not condi, 
-                enable_mem_efficient=not condi
-            ):
-                z = F.scaled_dot_product_attention(
-                    q_perm, k_perm, v_perm,
-                    attn_mask = mask.logical_not() if mask is not None else None,
-                    dropout_p = 0.0, 
-                    is_causal = False, 
-                    scale = 1.0
-                )
-        z = z.permute(0, 2, 1, 3)  # Back to (batch, posq, n_heads, d_head)
-        out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
-        out = out.sum(dim=2) 
-        #print(f"out {out.shape}, attention {probas.shape}, q {q.shape}, k {k.shape}, v {v.shape}")
-        return out, z, None
-    
-    @property
-    def dtype(self):
-        return self.parameters().__next__().dtype
-    
-    @property
-    def device(self):
-        return self.parameters().__next__().device
-
-
-if __name__ == "__main__":
-    from .pe import RoPE
-    import inspect
-    rope = RoPE(256//8, 10000)
-    dtype = t.float32
-    rope = rope.to(dtype)
-    attn_slow = AttentionSlow(d_model=256, n_heads=8, rope=rope)
-    attn = Attention(d_model=256, n_heads=8, rope=rope)
-    attn.load_state_dict(attn_slow.state_dict(), strict=False)
-    attn.to(dtype)
-    attn_slow.to(dtype)
-    x = t.randn(1, 1000, 256, dtype=dtype)*10
-    xkv = t.randn(1, 1000, 256, dtype=dtype)*10
-    mask = t.randint(0, 2, (1000, 1000), dtype=t.bool)
-    y, z, _ = attn(x, xkv, mask=mask)
-    y_slow, z_slow, _ = attn_slow(x, xkv, mask=mask)
-    #assert t.allclose(z, z_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(z - z_slow).abs().max()}"
-    #assert t.allclose(y, y_slow, atol=1e-5), f"Attention and AttentionSlow should be the same: {(y - y_slow).abs().max()}"
-    print("Attention and AttentionSlow are the same")
-
-    loss = t.nn.functional.mse_loss(y, y_slow)
-    loss.backward()
-    print("-"*100)
-    for n, p in attn.named_parameters():
-        print(n, p.grad.shape, p.grad.max(), p.grad.min())
-    print("-"*100)
-    for n, p in attn_slow.named_parameters():
-        print(n, p.grad.shape, p.grad.max(), p.grad.min())

@@ -13,8 +13,6 @@ model:
   bidirectional: false
   nocompile: false
   checkpoint: "experiments/radiant-forest-398/ckpt-step=053700-metric=0.00092727.pt"
-  #checkpoint: "experiments/frosty-sunset-395/ckpt-step=002100-metric=0.00160125.pt"
-  #checkpoint: "experiments/vivid-sea-390/ckpt-step=000700-metric=0.01958773.pt"
 
 train:
   lr1: 0.02
