@@ -1,19 +1,10 @@
 import torch as t
 import torch.nn.functional as F
-from torch.optim import AdamW
 from tqdm import tqdm
 import wandb
-from pdb import set_trace
-
-import io
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import wandb
-
 from torch.nn import functional as F
 from tqdm import tqdm
 import math
-import random
 
 from muon import SingleDeviceMuonWithAuxAdam
 
@@ -84,7 +75,7 @@ def train(model, dataloader,
         x0 = frames
         vel_true = x0 - z
         x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
-        vel_pred = model(x_t, actions, ts)
+        vel_pred, _, _ = model(x_t, actions, ts)
         loss = F.mse_loss(vel_pred, vel_true, reduction="mean")
         wandb.log({"loss": loss.item()})
         wandb.log({"lr": scheduler.get_last_lr()[0]})
@@ -107,7 +98,7 @@ def train(model, dataloader,
                     vel_true = x0 - z
                     ts = noise_level * t.ones(frames.shape[0], frames.shape[1], device=device, dtype=dtype)
                     x_t = x0 - ts[:, :, None, None, None].to(device) * vel_true
-                    vel_pred = model(x_t, actions, ts)
+                    vel_pred, _, _ = model(x_t, actions, ts)
                     noise_losses.append(F.mse_loss(vel_pred, vel_true, reduction="mean"))
                     wandb.log({f"noise:{noise_level}": noise_losses[-1].item()})
 
@@ -120,6 +111,6 @@ def train(model, dataloader,
             else:
                 z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             frames_sampled = pred2frame(z_sampled)
-            log_video(frames_sampled, tag=f"{step:04d}")
+            log_video(frames_sampled)
 
     return model

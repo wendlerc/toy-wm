@@ -1,19 +1,12 @@
 import torch as t
 import torch.nn.functional as F
-from torch.optim import AdamW
 from tqdm import tqdm
 import wandb
-from pdb import set_trace
 
-import io
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-import wandb
 
 from torch.nn import functional as F
 from tqdm import tqdm
 import math
-import random
 from functools import partial
 
 from muon import SingleDeviceMuonWithAuxAdam
@@ -112,7 +105,7 @@ def train(student_cfg, teacher_cfg, dataloader,
             z = t.randn_like(frames, device=device, dtype=dtype)
             gen_ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
-            v_pred = gen(x_inp, actions, gen_ts)
+            v_pred, _, _ = gen(x_inp, actions, gen_ts)
             x_pred = x_inp + gen_ts[:,:,None,None,None]*v_pred
             if clamp_pred:
                 x_pred = t.clamp(x_pred, -1.0, 1.0)
@@ -123,8 +116,8 @@ def train(student_cfg, teacher_cfg, dataloader,
             ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
             x_t = x_pred - ts[:,:,None,None,None]*v_pred # does it matter that we reuse the noise from the generation step here?
             x_t_nograd = x_t.detach()
-            fake_vel = fake_v(x_t_nograd, actions, ts).double()
-            real_vel = true_v(x_t_nograd, actions, ts).double()
+            fake_vel, _, _ = fake_v(x_t_nograd, actions, ts).double()
+            real_vel, _, _ = true_v(x_t_nograd, actions, ts).double()
             fake_x = x_t_nograd.double() + ts[:,:,None,None,None]*fake_vel.double()
             real_x = x_t_nograd.double() + ts[:,:,None,None,None]*real_vel.double()
             # get scores using Tweedie's formula
@@ -178,7 +171,7 @@ def train(student_cfg, teacher_cfg, dataloader,
                 z = t.randn_like(frames, device=device, dtype=dtype)
                 x_inp = frames - gen_ts[:,:,None,None,None]*(frames - z)
                 with t.no_grad():
-                    v_pred = gen(x_inp, actions, gen_ts)
+                    v_pred, _, _ = gen(x_inp, actions, gen_ts)
                 x_pred = x_inp + gen_ts[:,:,None,None,None]*v_pred
                 if clamp_pred:
                     x_pred = t.clamp(x_pred, -1.0, 1.0)
@@ -188,7 +181,7 @@ def train(student_cfg, teacher_cfg, dataloader,
                 ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
                 x_t = x_pred - ts[:,:,None,None,None]*v_pred 
                 x_t_nograd = x_t.detach()
-                fake_vel = fake_v(x_t_nograd, actions, ts)
+                fake_vel, _, _ = fake_v(x_t_nograd, actions, ts)
                 fake_loss = F.mse_loss(fake_vel, v_pred.detach())
             fake_loss.backward()
             step_fake += 1

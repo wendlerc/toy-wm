@@ -191,7 +191,7 @@ def initialize_model():
     model = t.compile(model)
 
 
-    _, pred2frame_ = get_loader(duration=1, fps=30, mode='-1,1')
+    _, pred2frame_ = get_loader(duration=1, fps=30)
     globals()["pred2frame"] = pred2frame_
 
     H = W = 24
@@ -230,7 +230,6 @@ def initialize_model():
         return z
 
     globals()["step_once"] = _step
-    print("Mode: eager (no torch.compile)")
 
     # Warmup - need enough frames to trigger cache wrap-around to prevent recompilation at frame 30
     # Cache wraps after n_window frames (30), so we warm up with 35+ frames to ensure both
@@ -563,9 +562,8 @@ def handle_stop_stream():
 # Entrypoint
 # --------------------------
 if __name__ == '__main__':
-    # Start model initialization in background thread so server starts immediately
-    init_thread = threading.Thread(target=initialize_model, daemon=True)
-    init_thread.start()
+
+    initialize_model()
     
     print("Starting Flask server on http://localhost:5000")
     print("Model will load in background...")

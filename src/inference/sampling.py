@@ -19,7 +19,7 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
 
         v_pred, k_new, v_new = v(z_prev.to(device), actions.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)
 
-        if i == len(ts)-2:
+        if i == len(ts)-2 and cache is not None:
             cache.extend(k_new, v_new)
 
         if cfg > 0:

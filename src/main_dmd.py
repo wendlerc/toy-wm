@@ -15,7 +15,7 @@ t.set_float32_matmul_precision("high")
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()    # 0.002, 3e-5, (0.9, 0.95), 1e-5, 26000 works ok
     parser.add_argument("--student", type=str, default="configs/bigger_dmd.yaml")
-    parser.add_argument("--teacher", type=str, default="configs/bigger_dmd_teacher.yaml")
+    parser.add_argument("--teacher", type=str, default="configs/inference.yaml")
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.student)

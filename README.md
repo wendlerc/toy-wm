@@ -21,3 +21,8 @@ Then, I continued training by updating the `checkpoint` field in `configs/bigger
 # Inference / running the demo
 
 Update `configs/inference.yaml` to use the checkpoint you want to run. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
+
+# Resources
+
+- [minRF](https://github.com/cloneofsimo/minRF)
+- [owl-wms](https://github.com/Wayfarer-Labs/owl-wms)
