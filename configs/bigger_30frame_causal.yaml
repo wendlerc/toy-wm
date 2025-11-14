@@ -12,7 +12,8 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/pleasant-plasma-596/ckpt-step=038800-metric=0.00026014.pt"
+  checkpoint: "experiments/pleasant-plasma-596/model.pt"
+  #"experiments/pleasant-plasma-596/ckpt-step=038800-metric=0.00026014.pt"
   # "experiments/pleasant-plasma-596/ckpt-step=038800-metric=0.00026014.pt"
 
 train:
