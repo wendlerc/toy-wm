@@ -12,6 +12,7 @@ model:
   C: 5000
   bidirectional: true
   nocompile: false
+  rope_type: "vid"
   checkpoint: null
 
 train:
@@ -19,13 +20,14 @@ train:
   lr2: 3.0e-5
   betas: [0.9, 0.95]
   weight_decay: 1.0e-5
-  max_steps: 5000
+  max_steps: 1000
   warmup_steps: 100
   batch_size: 256
   noclip: false
   duration: 1
   fps: 1
   debug: false
+  dtype: "bf16"
 
 wandb:
   name: null

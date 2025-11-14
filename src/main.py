@@ -49,7 +49,9 @@ if __name__ == "__main__":
                     n_blocks=cmodel.n_blocks, 
                     T=cmodel.T, 
                     in_channels=cmodel.in_channels,
-                    bidirectional=cmodel.bidirectional)
+                    bidirectional=cmodel.bidirectional,
+                    C=C,
+                    rope_type=cmodel.rope_type)
     if cmodel.checkpoint is not None:
         print(f"Loading model from {cmodel.checkpoint}")
         state_dict = t.load(cmodel.checkpoint, weights_only=False)

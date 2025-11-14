@@ -5,10 +5,10 @@ import torch.nn.functional as F
 from ..nn.attn import AttentionEinOps, KVCache, KVCacheNaive
 from ..nn.patch import Patch, UnPatch
 from ..nn.geglu import GEGLU
-from ..nn.pe import NumericEncoding, RoPE
+from ..nn.pe import NumericEncoding, RoPE, LearnRoPE, VidRoPE
 from jaxtyping import Float, Bool, Int
 from torch import Tensor
-from typing import Optional
+from typing import Optional, Literal
 
 import matplotlib.pyplot as plt
 import math
@@ -55,7 +55,8 @@ class CausalDit(nn.Module):
                        n_registers=1, n_actions=4, bidirectional=False, 
                        debug=False, 
                        rope_C=10000,
-                       rope_tmax=None):
+                       rope_tmax=None,
+                       rope_type: Literal["rope", "learn", "vid"] = "rope"):
         super().__init__()
         self.height = height
         self.width = width
@@ -74,7 +75,30 @@ class CausalDit(nn.Module):
         self.rope_C = rope_C
         if rope_tmax is None:
             rope_tmax = self.n_window*self.toks_per_frame
-        self.rope_seq = RoPE(d_model//n_heads, rope_tmax, C=rope_C)
+        if rope_type == "rope":
+            self.rope_seq = RoPE(d_model//n_heads, rope_tmax, C=rope_C)
+        elif rope_type == "learn":
+            self.rope_seq = LearnRoPE(d_model//n_heads, rope_tmax, C=rope_C)
+        elif rope_type == "vid":
+            d_head = d_model//n_heads 
+            d_x = d_y = d_t = d_head // 3
+            C_x = C_y = C_t = rope_C // 3
+            ctx_x = width // patch_size
+            ctx_y = height // patch_size
+            ctx_t = self.n_window
+            self.rope_seq = VidRoPE(d_head, 
+                                    d_x, 
+                                    d_y,
+                                    d_t,
+                                    ctx_x,
+                                    ctx_y,
+                                    ctx_t,
+                                    C_x,
+                                    C_y,
+                                    C_t,
+                                    self.toks_per_frame,
+                                    n_registers)
+
         self.grid_pe = None
         self.rope_tmax = rope_tmax
 
@@ -161,8 +185,8 @@ class CausalDit(nn.Module):
         return self.parameters().__next__().dtype
 
 
-def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, C=10000):
-    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, rope_C=C)
+def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, C=10000, rope_type: Literal["rope", "learn", "vid"] = "rope"):
+    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, rope_C=C, rope_type=rope_type)
 
 if __name__ == "__main__":
     print("running w/o cache")

@@ -10,9 +10,14 @@ model:
   d_model: 384
   n_blocks: 8
   C: 5000
-  bidirectional: false
+  bidirectional: true
   nocompile: false
-  checkpoint: "experiments/bigger_30frame_causal/pytorch_model.pt"
+  checkpoint: "experiments/comic-silence-613/model.pt"
+  #checkpoint: "experiments/playful-field-611/model.pt"
+  #"experiments/bigger_30frame_causal/pytorch_model.pt"
+  #"experiments/playful-field-611/model.pt"
+  #"experiments/playful-field-611/ckpt-step=001600-metric=0.00165918.pt"
+  #"experiments/bigger_30frame_causal/pytorch_model.pt"
   #"experiments/pleasant-plasma-596/model.pt"
   #"experiments/pleasant-plasma-596/model.pt"
   #"experiments/fancy-yogurt-597/ckpt-step=005700-metric=0.00129715.pt"

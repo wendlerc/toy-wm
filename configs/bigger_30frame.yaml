@@ -12,20 +12,23 @@ model:
   C: 5000
   bidirectional: true
   nocompile: false
-  checkpoint: "experiments/scarlet-morning-585/ckpt-step=001000-metric=0.01587707.pt"
+  checkpoint: "experiments/summer-thunder-631/model.pt"
+  rope_type: "vid"
 
 train:
   lr1: 0.02
-  lr2: 3.0e-5
+  lr2: 3.0e-4
   betas: [0.9, 0.95]
   weight_decay: 1.0e-5
-  max_steps: 50000
+  max_steps: 10000
   warmup_steps: 100
-  batch_size: 16
+  batch_size: 20
   noclip: false
   duration: 1
   fps: 30
   debug: false
+  dtype: "bf16"
+  
 
 wandb:
   name: null

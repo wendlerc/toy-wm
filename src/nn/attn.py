@@ -249,7 +249,7 @@ class AttentionEinOps(nn.Module):
             if self.rope is not None:
                 q = self.rope(q, offset=k_cache.shape[1])
                 k = self.rope(k, offset=0)
-            q = self.ln1(q) # this should be before rope
+            q = self.ln1(q) # ppl usually do this before rope but our best checkpoint has it after rope, so this is for bwd compatibility; but in quick test on singleframe this did not make a big difference
             k = self.ln2(k)
             mask = None
         else:
@@ -260,7 +260,7 @@ class AttentionEinOps(nn.Module):
                 q = self.rope(q)
                 k = self.rope(k)
             q = self.ln1(q)
-            k = self.ln2(k) # this learns much faster using layernorm here (and yes usually this is before rope)
+            k = self.ln2(k) 
             k_new = k
             v_new = v
 
