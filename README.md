@@ -1,6 +1,6 @@
 # TLDR
 
-A toy implementation of a diffusion transformer based "world model" trained on 9 hours of pong. Shoutout @pufferlib for their great pong environment that was used for dataset creation.
+A toy implementation of a diffusion transformer based "world model" trained on 9 hours of pong. Shoutout [@pufferlib](https://github.com/PufferAI/PufferLib/blob/3.0/pufferlib/ocean/pong/pong.h) for their great pong environment that was used for dataset creation.
 
 # Setup
 
