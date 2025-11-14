@@ -10,7 +10,7 @@ A toy implementation of a diffusion transformer based "world model" trained on 9
 
 # Training
 
-I created my current best checkpoint in a little bit of an ad-hoc way. I first trained a single frame model using: 
+I created my current best checkpoint in a little bit of an ad-hoc way on a single A6000. I first trained a single frame model using (starting from a single-frame model accelerates the mult-frame training a lot). 
 
 `uv run python -m src.main --config configs/bigger_1frame.yaml`
 
