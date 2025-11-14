@@ -61,7 +61,7 @@ if __name__ == "__main__":
                   weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
                   clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
                   device=device, dtype=dtype, gradient_accumulation=ctrain.gradient_accumulation,
-                  clamp_pred=ctrain.clamp_pred, warmup_steps=ctrain.warmup_steps, lambda_dmd=ctrain.lambda_dmd,
+                  clamp_pred=ctrain.clamp_pred, warmup_steps=ctrain.warmup_steps,
                   n_fake_updates=ctrain.n_fake_updates)
 
     # Save model
