@@ -26,9 +26,9 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
             if cache is not None:
                 raise NotImplementedError("this is not implemented yet")
             if negative_actions is not None:
-                v_neg = v(z_prev.to(device), negative_actions.to(device), t_cond.to(device))
+                v_neg, _, _ = v(z_prev.to(device), negative_actions.to(device), t_cond.to(device))
             else:
-                v_neg = v(z_prev.to(device), t.zeros_like(actions, dtype=t.long, device=device), t_cond.to(device))
+                v_neg, _, _ = v(z_prev.to(device), t.zeros_like(actions, dtype=t.long, device=device), t_cond.to(device))
             v_pred = v_neg + cfg * (v_pred - v_neg)
         z_prev = z_prev + (ts[i] - ts[i+1])*v_pred 
     return z_prev
