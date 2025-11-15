@@ -26,7 +26,9 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
                     n_blocks=cmodel.n_blocks, 
                     T=cmodel.T, 
                     in_channels=cmodel.in_channels,
-                    bidirectional=cmodel.bidirectional)
+                    bidirectional=cmodel.bidirectional,
+                    rope_type=cmodel.rope_type,
+                    C=cmodel.C)
     if checkpoint_path is None and cmodel.checkpoint is not None:
         checkpoint_path = cmodel.checkpoint
     if checkpoint_path is not None:

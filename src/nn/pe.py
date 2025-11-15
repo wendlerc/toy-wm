@@ -127,7 +127,7 @@ class VidRoPE(nn.Module):
 
 
     def forward(self, key_or_query: Float[Tensor, "batch sequence n_head d_head"],
-                      offset: int = 0):
+                      offset: int = 0): 
         x = key_or_query 
         n_frames = x.shape[1]//self.toks_per_frame
         device = x.device
@@ -140,6 +140,7 @@ class VidRoPE(nn.Module):
         pos_y = t.cat([pos_y, t.tensor([self.ctx_y], dtype=t.int32, device=device)]) # deal with register
         pos_y = pos_y.repeat(n_frames)
         pos_t = t.arange(n_frames, device=device).repeat_interleave(self.toks_per_frame)
+        pos_t += offset//self.toks_per_frame
         x[:, :, :, :self.d_x] = self.rotate(x[:, :, :, :self.d_x], pos_x, self.coss_x, self.sins_x) 
         x[:, :, :, self.d_x:self.d_x+self.d_y] = self.rotate(x[:, :, :, self.d_x:self.d_x+self.d_y], pos_y, self.coss_y, self.sins_y)
         x[:, :, :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t] = self.rotate(x[:, : , :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t], pos_t, self.coss_t, self.sins_t) 

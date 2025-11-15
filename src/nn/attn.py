@@ -247,7 +247,7 @@ class AttentionEinOps(nn.Module):
             v = t.cat([v_cache, v_new], dim=1)
 
             if self.rope is not None:
-                q = self.rope(q, offset=k_cache.shape[1])
+                q = self.rope(q, offset=k_cache.shape[1]) 
                 k = self.rope(k, offset=0)
             q = self.ln1(q) # ppl usually do this before rope but our best checkpoint has it after rope, so this is for bwd compatibility; but in quick test on singleframe this did not make a big difference
             k = self.ln2(k)
