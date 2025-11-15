@@ -12,8 +12,8 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/fancy-yogurt-597/ckpt-step=006900-metric=0.00115805.pt"
-  rope_type: "rope"
+  checkpoint: "experiments/glowing-violet-635/ckpt-step=087600-metric=0.00092348.pt"
+  rope_type: "vid"
   #"experiments/worldly-water-607/ckpt-step=005900-metric=0.00670522.pt"
   #"experiments/comic-silence-613/model.pt"
   #checkpoint: "experiments/playful-field-611/model.pt"

@@ -12,7 +12,8 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/glowing-violet-635/ckpt-step=031500-metric=0.00135337.pt" 
+  checkpoint: "experiments/absurd-oath-640/ckpt-step=059300-metric=0.00111919.pt"
+  #"experiments/glowing-violet-635/ckpt-step=031500-metric=0.00135337.pt" 
   #"experiments/absurd-oath-640/ckpt-step=012600-metric=0.00166822.pt"
   rope_type: "vid"
   #"experiments/worldly-water-607/ckpt-step=005900-metric=0.00670522.pt"

@@ -5,6 +5,7 @@ import math
 from jaxtyping import Float, Bool, Int
 from torch import Tensor
 from typing import Optional
+from pdb import set_trace 
 
 def compute_trig(d_head, n_ctx, C):
     thetas = t.exp(-math.log(C)*t.arange(0,d_head,2)/d_head)
@@ -135,7 +136,7 @@ class VidRoPE(nn.Module):
         # ctx_y should be equal to height
         pos_x = t.arange(self.ctx_x, device=device).repeat(self.ctx_y) # w cols with h entries each
         pos_x = t.cat([pos_x, t.tensor([self.ctx_x], dtype=t.int32, device=device)]) # deal with register
-        pos_x = pos_x.repeat_interleave(n_frames)
+        pos_x = pos_x.repeat(n_frames)
         pos_y = t.arange(self.ctx_y, device=device).repeat_interleave(self.ctx_x) # h rows with w entries each
         pos_y = t.cat([pos_y, t.tensor([self.ctx_y], dtype=t.int32, device=device)]) # deal with register
         pos_y = pos_y.repeat(n_frames)
