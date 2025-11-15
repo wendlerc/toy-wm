@@ -12,7 +12,8 @@ model:
   C: 5000
   bidirectional: true
   nocompile: false
-  checkpoint: "experiments/comic-silence-613/model.pt"
+  checkpoint: "experiments/worldly-water-607/ckpt-step=005900-metric=0.00670522.pt"
+  #"experiments/comic-silence-613/model.pt"
   #checkpoint: "experiments/playful-field-611/model.pt"
   #"experiments/bigger_30frame_causal/pytorch_model.pt"
   #"experiments/playful-field-611/model.pt"
