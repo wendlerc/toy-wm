@@ -13,16 +13,15 @@ def causal_mod(score, b, h, q_idx, kv_idx):
 def create_block_causal_mask_mod(block_size):
     def block_causal_mask_mod(b, h, q_idx, kv_idx):
         # either q is in a later block or q and k are in the same block
-        return (q_idx >= kv_idx) | ((q_idx // block_size) == (kv_idx // block_size))
+        return ((q_idx >= kv_idx) | ((q_idx // block_size) == (kv_idx // block_size)))
     return block_causal_mask_mod
 
 class Attention(nn.Module):
-    def __init__(self, d_model, n_heads, causal=True, use_flex=True, rope=None):
+    def __init__(self, d_model, n_heads, use_flex=True, rope=None):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
         self.d_head = d_model // n_heads
-        self.causal = causal
         assert d_model % n_heads == 0, "d_model must be divisible by d_head"
 
         self.QKV = nn.Linear(self.d_model, 3 * self.d_model)
@@ -31,7 +30,6 @@ class Attention(nn.Module):
         self.lnk = nn.LayerNorm(self.d_head)
         self.rope = rope
         self.use_flex = use_flex
-        self.scale = 1.0 / (self.d_head ** 0.5)
 
     def forward(self, x, offset=0, mask=None, debug=False):
         # x: batch x seq x d_model
@@ -52,16 +50,16 @@ class Attention(nn.Module):
             k_flex = k.permute(0, 2, 1, 3)
             v_flex = v.permute(0, 2, 1, 3)
             if mask is not None:
-                z = flex_attention(q_flex, k_flex, v_flex, scale=self.scale, block_mask = mask)
+                z = flex_attention(q_flex, k_flex, v_flex, scale=1., block_mask = mask)
             else:
-                z = flex_attention(q_flex, k_flex, v_flex, scale=self.scale)
+                z = flex_attention(q_flex, k_flex, v_flex, scale=1.)
             z = z.permute(0, 2, 1, 3)
         else:
             q = q.permute(0, 2, 1, 3)
             k = k.permute(0, 2, 1, 3)
             v = v.permute(0, 2, 1, 3)
             # q, k, v: (batch, n_heads, seq, d_head)
-            attn = (q @ k.permute(0, 1, 3, 2)) * self.scale  # batch x nh x seqq x seqk
+            attn = (q @ k.permute(0, 1, 3, 2)) # batch x nh x seqq x seqk
             if mask is not None:
                 attn = t.where(mask, attn, float("-inf"))
             probas = attn.softmax(dim=-1)
@@ -88,16 +86,17 @@ class Attention(nn.Module):
         return self.QKV.weight.dtype
 
 if __name__ == "__main__":
-    import time
+    t.set_float32_matmul_precision("high")
     t.manual_seed(0)
-    
+    import time
+
     # No device or dtype restriction for flex_attention (assuming it supports both CUDA and CPU)
     device = 'cuda' if t.cuda.is_available() else 'cpu'
     dtype = t.bfloat16
 
     x = t.rand(32, 65*30, 384, device=device, dtype=dtype)
-    attn = Attention(384, 6, use_flex=False, causal=True).to(device).to(dtype)
-    attn_flex = Attention(384, 6, use_flex=True, causal=True).to(device).to(dtype)
+    attn = Attention(384, 6, use_flex=False).to(device).to(dtype)
+    attn_flex = Attention(384, 6, use_flex=True).to(device).to(dtype)
     def causal_mask(self):
         size = self.n_window
         m_self = t.tril(t.ones((size, size), dtype=t.int8, device=self.device)) # - t.tril(t.ones((size, size), dtype=t.int8, device=self.device), diagonal=-self.n_window) # this would be useful if we go bigger than windowxwindow
@@ -108,6 +107,16 @@ if __name__ == "__main__":
     block_mask = t.kron(block_mask, t.ones((65, 65), dtype=t.int8, device=device))
     block_mask = block_mask.to(bool)
     block_mask_flex = create_block_mask(create_block_causal_mask_mod(65), B=None, H=None, Q_LEN=x.shape[1], KV_LEN=x.shape[1])
+    
+    block_mask_ = create_block_causal_mask_mod(65)
+    block_mask_test = t.zeros((65*5, 65*5), dtype=bool, device=device)
+    for i in range(65*5):
+        for j in range(65*5):
+            block_mask_test[i, j] = block_mask_(None, None,i, j)
+    plt.imshow(block_mask_test.cpu().detach().numpy())
+    plt.savefig("block_mask_test.png")
+    plt.show()
+    assert (block_mask_test == block_mask[:65*5, :65*5]).all()
     # Compile both for fair comparison - CRITICAL for flex attention performance!
     attn_flex.load_state_dict(attn.state_dict())
     attn_flex.eval()
