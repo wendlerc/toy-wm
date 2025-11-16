@@ -35,15 +35,16 @@ class Attention(nn.Module):
         v = v.reshape(b, s, self.n_heads, self.d_head).permute(0, 2, 1, 3)
         # q, k, v: (batch, n_heads, seq, d_head)
         if self.use_flash:
-            # flash_attn_func expects shape (batch, seqlen, nheads, d_head) and fp16/fp32 on CUDA
-            q_flash = q.permute(0, 2, 1, 3).contiguous().to(dtype=x.dtype)
-            k_flash = k.permute(0, 2, 1, 3).contiguous().to(dtype=x.dtype)
-            v_flash = v.permute(0, 2, 1, 3).contiguous().to(dtype=x.dtype)
+            # flash_attn_func expects shape (batch, seqlen, nheads, d_head) and fp16/bf16 on CUDA
+            q_flash = q.permute(0, 2, 1, 3).contiguous()
+            k_flash = k.permute(0, 2, 1, 3).contiguous()
+            v_flash = v.permute(0, 2, 1, 3).contiguous()
             # shape: (batch, seq, n_heads, d_head)
-            # flash_attn_func(q, k, v, dropout_p, causal, softmax_scale)
-            y = flash_attn_func(q_flash, k_flash, v_flash, 0.0, self.causal, None)
-            # output: (batch, seq, n_heads, d_head)
-            z = y.permute(0, 2, 1, 3).reshape(b, s, d)
+            # flash_attn_func(q, k, v, dropout_p, softmax_scale, causal)
+            softmax_scale = self.d_head ** (-0.5)
+            y = flash_attn_func(q_flash, k_flash, v_flash, 0.0, softmax_scale, self.causal)
+            # output: (batch, seq, n_heads, d_head) --> we don't need to permute to that order
+            z = y.reshape(b, s, d)
             z = self.O(z)
             return z
         else:
@@ -73,18 +74,39 @@ class Attention(nn.Module):
 
 if __name__ == "__main__":
     t.manual_seed(0)
-    attn = Attention(64, 2, use_flash=False)
-    attn_flash = Attention(64, 2, use_flash=True) if _has_flashattn else None
-    x = t.rand(8, 100, 64).to(attn.QKV.weight.device)
+    
+    # Flash attention requires CUDA
+    device = 'cuda' if t.cuda.is_available() and _has_flashattn else 'cpu'
+    
+    attn = Attention(32, 2, use_flash=False).to(device)
+    attn_flash = Attention(32, 2, use_flash=True).to(device) if _has_flashattn and t.cuda.is_available() else None
+    
+    # Flash attention requires fp16 or bf16
+    if _has_flashattn and t.cuda.is_available():
+        attn = attn.to(t.bfloat16)
+        attn_flash = attn_flash.to(t.bfloat16)
+        x = t.rand(8, 10, 32, device=device, dtype=t.bfloat16)
+    else:
+        x = t.rand(8, 10, 32, device=device)
+    
     y_ref = attn(x)
-    if _has_flashattn:
-        # Move Attention with flash to same device and dtype as normal
-        attn_flash.to(attn.device).eval()
-        # Copy the weights for true equivalence
+    
+    if _has_flashattn and t.cuda.is_available():
+        # Copy the weights for equivalence
         attn_flash.load_state_dict(attn.state_dict())
-        y_flash = attn_flash(x)
-        print(f"Max absolute difference (output): {t.abs(y_ref - y_flash).max().item()}")
-        print("Are outputs close?", t.allclose(y_ref, y_flash, atol=1e-4, rtol=1e-4))
+        attn_flash.eval()
+        attn.eval()
+        
+        with t.no_grad():
+            y_flash = attn_flash(x)
+        
+        print(f"Max absolute difference: {t.abs(y_ref - y_flash).max().item()}")
+        print(f"Mean absolute difference: {t.abs(y_ref - y_flash).mean().item()}")
+        # Note: Some numerical differences expected due to fp16/bf16 precision and different computation order
+        print("Outputs close (atol=1e-2):", t.allclose(y_ref, y_flash, atol=1e-2, rtol=1e-2))
+    elif _has_flashattn and not t.cuda.is_available():
+        print("flash-attn is installed but CUDA is not available; only vanilla attention tested.")
     else:
         print("flash-attn not installed; only vanilla attention tested.")
-    print(x.shape, y_ref.shape)
+    
+    print(f"Input shape: {x.shape}, Output shape: {y_ref.shape}")
