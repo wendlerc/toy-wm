@@ -82,6 +82,7 @@ class Attention(nn.Module):
         return self.QKV.weight.dtype
 
 if __name__ == "__main__":
+    import time
     t.manual_seed(0)
     
     # Flash attention requires CUDA
@@ -94,11 +95,18 @@ if __name__ == "__main__":
     if _has_flashattn and t.cuda.is_available():
         attn = attn.to(t.bfloat16)
         attn_flash = attn_flash.to(t.bfloat16)
-        x = t.rand(32, 65*30, 384, device=device, dtype=t.bfloat16)
+        x = t.rand(64, 65*30, 384, device=device, dtype=t.bfloat16)
     else:
-        x = t.rand(32, 65*30, 384, device=device)
+        x = t.rand(64, 65*30, 384, device=device)
     
-    y_ref = attn(x)
+    with t.no_grad():
+        t.cuda.synchronize()
+        start_time = time.time()
+        for _ in range(100):
+            y_ref = attn(x)
+        t.cuda.synchronize()
+        elapsed = time.time() - start_time
+        print(f"Vanilla Attention forward pass took {elapsed:.6f} seconds")
     
     if _has_flashattn and t.cuda.is_available():
         # Copy the weights for equivalence
@@ -107,7 +115,13 @@ if __name__ == "__main__":
         attn.eval()
         
         with t.no_grad():
-            y_flash = attn_flash(x)
+            t.cuda.synchronize()
+            start_time = time.time()
+            for _ in range(100):
+                y_flash = attn_flash(x)
+            t.cuda.synchronize()
+            elapsed = time.time() - start_time
+            print(f"Flash Attention forward pass took {elapsed:.6f} seconds")
         
         print(f"Max absolute difference: {t.abs(y_ref - y_flash).max().item()}")
         print(f"Mean absolute difference: {t.abs(y_ref - y_flash).mean().item()}")
