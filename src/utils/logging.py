@@ -13,4 +13,4 @@ def log_video(z, fps=5):
         raise ValueError(f"Unexpected shape: {z.shape}")
 
     frames_uint8 = frames.byte().cpu().numpy()
-    wandb.log({"sample": wandb.Video(frames_uint8, fps=fps, format="mp4")})
+    return wandb.Video(frames_uint8, fps=fps, format="mp4")

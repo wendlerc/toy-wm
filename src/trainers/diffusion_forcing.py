@@ -25,6 +25,7 @@ def train(model, dataloader,
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
+        log_dict = {}
         optimizer.zero_grad()
         try:
             frames, actions = next(iterator)
@@ -53,15 +54,15 @@ def train(model, dataloader,
             x_t = x0 - ts[:, :, None, None, None] * vel_true
             vel_pred, _, _ = model(x_t, actions, ts)
             loss = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
-            wandb.log({"loss": loss.item()})
-            wandb.log({"lr": scheduler.get_last_lr()[0]})
+        
         loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
         optimizer.step()
         scheduler.step()
         pbar.set_postfix(loss=loss.item())
-
+        log_dict["loss"] = loss.item()
+        log_dict["lr"] = scheduler.get_last_lr()[0]
         if step % 100 == 0 and pred2frame is not None:
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
             # compute loss per noise level
@@ -77,8 +78,7 @@ def train(model, dataloader,
                         x_t = x0 - ts[:, :, None, None, None] * vel_true
                         vel_pred, _, _ = model(x_t, actions, ts)
                         noise_losses.append(F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean"))
-                        wandb.log({f"noise:{noise_level}": noise_losses[-1].item()})
-
+                        log_dict[f"noise:{noise_level}"] = noise_losses[-1].item()
 
             if frames.shape[1] == 1: 
                 with t.autocast(device_type=device, dtype=dtype):
@@ -90,6 +90,7 @@ def train(model, dataloader,
                 with t.autocast(device_type=device, dtype=dtype):
                     z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             frames_sampled = pred2frame(z_sampled)
-            log_video(frames_sampled)
+            log_dict["sample"] = log_video(frames_sampled)
+        wandb.log(log_dict)
 
     return model
