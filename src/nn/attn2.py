@@ -5,6 +5,7 @@ from matplotlib import pyplot as plt
 
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
+
 def causal_mod(score, b, h, q_idx, kv_idx):
     return t.where(q_idx >= kv_idx, score, float("-inf"))
 
@@ -44,7 +45,9 @@ class Attention(nn.Module):
             q_flex = q.permute(0, 2, 1, 3)
             k_flex = k.permute(0, 2, 1, 3)
             v_flex = v.permute(0, 2, 1, 3)
-            
+            #q_flex = t.nested.nested_tensor(q_flex, layout=t.jagged)
+            #k_flex = t.nested.nested_tensor(k_flex, layout=t.jagged)
+            #v_flex = t.nested.nested_tensor(v_flex, layout=t.jagged)
             if self.causal:
                 z = flex_attention(q_flex, k_flex, v_flex, 
                                   score_mod=causal_mod, scale=self.scale)
@@ -87,15 +90,20 @@ if __name__ == "__main__":
     
     # No device or dtype restriction for flex_attention (assuming it supports both CUDA and CPU)
     device = 'cuda' if t.cuda.is_available() else 'cpu'
-    
-    attn = Attention(384, 6, use_flex=False, causal=True).to(device)
-    attn_flex = Attention(384, 6, use_flex=True, causal=True).to(device)
+    dtype = t.bfloat16
+
+    attn = Attention(384, 6, use_flex=False, causal=True).to(device).to(dtype)
+    attn_flex = Attention(384, 6, use_flex=True, causal=True).to(device).to(dtype)
     
     # Compile both for fair comparison - CRITICAL for flex attention performance!
+    attn_flex.load_state_dict(attn.state_dict())
+    attn_flex.eval()
+    attn.eval()
+    
     attn = t.compile(attn)
     attn_flex = t.compile(attn_flex)
-    
-    x = t.rand(32, 65*30, 384, device=device)
+
+    x = t.rand(32, 65*30, 384, device=device, dtype=dtype)
     
     # Warmup to trigger compilation
     print("Warming up (compiling)...")
@@ -110,17 +118,12 @@ if __name__ == "__main__":
         if device == "cuda":
             t.cuda.synchronize()
         start_time = time.time()
-        for _ in range(100):
+        for _ in range(500):
             y_ref = attn(x)
         if device == "cuda":
             t.cuda.synchronize()
         elapsed = time.time() - start_time
         print(f"Vanilla Attention forward pass took {elapsed:.6f} seconds")
-    
-    # Copy the weights for equivalence
-    attn_flex.load_state_dict(attn.state_dict())
-    attn_flex.eval()
-    attn.eval()
     
     # Warmup flex attention
     print("Warming up flex attention (compiling)...")
@@ -135,7 +138,7 @@ if __name__ == "__main__":
         if device == "cuda":
             t.cuda.synchronize()
         start_time = time.time()
-        for _ in range(100):
+        for _ in range(500):
             y_flex = attn_flex(x)
         if device == "cuda":
             t.cuda.synchronize()
