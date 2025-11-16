@@ -17,7 +17,6 @@ def train(model, dataloader,
           clipping=True,
           checkpoint_manager=None,
           device="cuda", dtype=t.float32):
-
     print(f"Using device: {device}, dtype: {dtype}")
     optimizer = get_muon(model, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
     scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, partial(lr_lambda, max_steps=max_steps, warmup_steps=warmup_steps))
@@ -43,7 +42,7 @@ def train(model, dataloader,
         frames = frames[:, :model.n_window]
         actions = actions[:, :model.n_window]
         
-        frames = frames.to(device)
+        frames = frames.to(device).to(dtype)
         actions = actions.to(device)
         
         with t.autocast(device_type=device, dtype=dtype):

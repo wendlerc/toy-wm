@@ -31,7 +31,7 @@ class Attention(nn.Module):
         self.rope = rope
         self.use_flex = use_flex
 
-    def forward(self, x, offset=0, mask=None, debug=False):
+    def forward(self, x, offset=0, mask=None, debug=False, k_cache=None, v_cache=None):
         # x: batch x seq x d_model
         qkv = self.QKV(x)
         q, k, v = qkv.chunk(3, dim=-1)
@@ -39,8 +39,8 @@ class Attention(nn.Module):
         q = q.reshape(b, s, self.n_heads, self.d_head)
         k = k.reshape(b, s, self.n_heads, self.d_head)
         v = v.reshape(b, s, self.n_heads, self.d_head)
-        q = self.lnq(q)
-        k = self.lnk(k)
+        q = self.lnq(q).to(dtype=self.dtype)
+        k = self.lnk(k).to(dtype=self.dtype)
         if self.rope is not None:
             q = self.rope(q)
             k = self.rope(k)
@@ -72,7 +72,7 @@ class Attention(nn.Module):
             z = z.permute(0, 2, 1, 3)
             # z ... batch x seq x nh x dh
         z = self.O(z.reshape(b, s, d))
-        return z
+        return z, k_cache, v_cache
 
     def mask(self, s: int):
         return t.tril(t.ones((s, s), dtype=bool, device=self.device))
@@ -119,8 +119,6 @@ if __name__ == "__main__":
     assert (block_mask_test == block_mask[:65*5, :65*5]).all()
     # Compile both for fair comparison - CRITICAL for flex attention performance!
     attn_flex.load_state_dict(attn.state_dict())
-    attn_flex.eval()
-    attn.eval()
     
     attn = t.compile(attn)
     attn_flex = t.compile(attn_flex)
@@ -129,44 +127,43 @@ if __name__ == "__main__":
     
     # Warmup to trigger compilation
     print("Warming up (compiling)...")
-    with t.no_grad():
-        for idx in range(3):
-            _ = attn(x, mask = block_mask)
-        if device == "cuda":
-            t.cuda.synchronize()
+
+    for idx in range(3):
+        _ = attn(x, mask = block_mask)
+    if device == "cuda":
+        t.cuda.synchronize()
     
     print("Benchmarking vanilla attention...")
-    with t.no_grad():
-        if device == "cuda":
-            t.cuda.synchronize()
-        start_time = time.time()
-        for _ in range(n_rep):
-            y_ref = attn(x, mask = block_mask)
-        if device == "cuda":
-            t.cuda.synchronize()
-        elapsed = time.time() - start_time
-        print(f"{n_rep} x Vanilla Attention forward pass took {elapsed:.6f} seconds")
-    
+
+    if device == "cuda":
+        t.cuda.synchronize()
+    start_time = time.time()
+    for _ in range(n_rep):
+        y_ref, k_cache, v_cache = attn(x, mask = block_mask)
+    if device == "cuda":
+        t.cuda.synchronize()
+    elapsed = time.time() - start_time
+    print(f"{n_rep} x Vanilla Attention forward pass took {elapsed:.6f} seconds")
+
     # Warmup flex attention
     print("Warming up flex attention (compiling)...")
-    with t.no_grad():
-        for _ in range(3):
-            _ = attn_flex(x, mask = block_mask_flex)
-        if device == "cuda":
-            t.cuda.synchronize()
+    for _ in range(3):
+        _ = attn_flex(x, mask = block_mask_flex)
+    if device == "cuda":
+        t.cuda.synchronize()
     
     print("Benchmarking flex attention...")
-    with t.no_grad():
-        if device == "cuda":
-            t.cuda.synchronize()
-        start_time = time.time()
-        for _ in range(n_rep):
-            y_flex = attn_flex(x, mask = block_mask_flex)
-        if device == "cuda":
-            t.cuda.synchronize()
-        elapsed = time.time() - start_time
-        print(f"{n_rep} x Flex Attention forward pass took {elapsed:.6f} seconds")
-    
+    if device == "cuda":
+        t.cuda.synchronize()
+    start_time = time.time()
+    for _ in range(n_rep):
+        y_flex, k_cache, v_cache = attn_flex(x, mask = block_mask_flex)
+    if device == "cuda":
+        t.cuda.synchronize()
+    elapsed = time.time() - start_time
+    print(f"{n_rep} x Flex Attention forward pass took {elapsed:.6f} seconds")
+    loss = y_flex.sum()
+    loss.backward()
     print(f"Max absolute difference: {t.abs(y_ref - y_flex).max().item()}")
     print(f"Mean absolute difference: {t.abs(y_ref - y_flex).mean().item()}")
     print("Outputs close (atol=1e-2):", t.allclose(y_ref, y_flex, atol=1e-2, rtol=1e-2))

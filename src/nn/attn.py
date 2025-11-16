@@ -280,11 +280,11 @@ class AttentionEinOps(nn.Module):
 
         attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
         if mask is not None and k_cache is not None:
-            attention = t.where(mask[k_cache.shape[1]:k_cache.shape[1]+q.shape[1], :k.shape[1]], self.IGNORE, attention)
+            attention = t.where(mask[k_cache.shape[1]:k_cache.shape[1]+q.shape[1], :k.shape[1]], attention, self.IGNORE)
         elif mask is not None:
             if attention.shape[-1] != mask.shape[-1] or attention.shape[-2] != mask.shape[-2]:
                 mask = mask[:attention.shape[-1], :attention.shape[-2]]
-            attention = t.where(mask, self.IGNORE, attention) 
+            attention = t.where(mask, attention, self.IGNORE) 
         probas = attention.softmax(dim=3)
         z = einops.einsum(probas, v, 'b n sq sk, b sk n h -> b sq n h')
         out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')

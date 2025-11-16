@@ -1,5 +1,5 @@
 from .datasets.pong1m import get_loader
-from .models.dit_dforce import get_model
+from .models.dit import get_model
 import wandb
 import argparse
 import os
@@ -67,6 +67,7 @@ if __name__ == "__main__":
         print("No checkpoint found")
 
     dtype = t.bfloat16 if ctrain.dtype == "bf16" else t.float32
+    print(f"Using device: {device}, dtype: {dtype}")
     model = model.to(device) 
     model = model.to(dtype)
 

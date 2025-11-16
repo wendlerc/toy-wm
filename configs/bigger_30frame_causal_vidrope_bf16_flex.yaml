@@ -1,0 +1,36 @@
+model:
+  model_id: "dit_dforce"
+  width: 24
+  height: 24
+  T: 1000
+  in_channels: 3
+  n_window: 30
+  patch_size: 3
+  n_heads: 6
+  d_model: 396
+  n_blocks: 8
+  C: 5000
+  bidirectional: false
+  nocompile: false
+  checkpoint: null #"experiments/sunny-mountain-634/model.pt" #"experiments/sunny-mountain-634/ckpt-step=005300-metric=0.00103706.pt"
+  rope_type: "vid"
+  ln_first: true
+
+train:
+  lr1: 0.02
+  lr2: 3.0e-5
+  betas: [0.9, 0.95]
+  weight_decay: 1.0e-5
+  max_steps: 50000
+  warmup_steps: 500
+  batch_size: 32
+  noclip: false
+  duration: 1
+  fps: 30
+  debug: false
+  dtype: "bf16"
+
+wandb:
+  name: null
+  project: "toy-wm"
+  run_name: "causal-layers8-heads12-d384"

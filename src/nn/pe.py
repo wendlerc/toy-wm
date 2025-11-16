@@ -114,6 +114,20 @@ class VidRoPE(nn.Module):
         sins_t, coss_t = compute_trig(d_t, ctx_t, C_t)
         self.register_buffer("sins_t", sins_t.unsqueeze(0).unsqueeze(2))
         self.register_buffer("coss_t", coss_t.unsqueeze(0).unsqueeze(2)) 
+        n_frames = ctx_t
+        # ctx_x should be equal to width
+        # ctx_y should be equal to height
+        pos_x = t.arange(self.ctx_x).repeat(self.ctx_y) # w cols with h entries each
+        pos_x = t.cat([pos_x, t.tensor([self.ctx_x], dtype=t.int32)]) # deal with register
+        pos_x = pos_x.repeat(n_frames)
+        pos_y = t.arange(self.ctx_y).repeat_interleave(self.ctx_x) # h rows with w entries each
+        pos_y = t.cat([pos_y, t.tensor([self.ctx_y], dtype=t.int32)]) # deal with register
+        pos_y = pos_y.repeat(n_frames)
+        pos_t = t.arange(n_frames).repeat_interleave(self.toks_per_frame)
+        self.register_buffer("pos_x", pos_x)
+        self.register_buffer("pos_y", pos_y)
+        self.register_buffer("pos_t", pos_t)
+
     
     def rotate(self, x, pos_idcs, coss, sins):
         x_perm = t.empty(x.shape, device=x.device, dtype=x.dtype) # batch sequence n_head d_head, we perm the last axis
@@ -130,21 +144,9 @@ class VidRoPE(nn.Module):
     def forward(self, key_or_query: Float[Tensor, "batch sequence n_head d_head"],
                       offset: int = 0): 
         x = key_or_query 
-        n_frames = x.shape[1]//self.toks_per_frame
-        device = x.device
-        # ctx_x should be equal to width
-        # ctx_y should be equal to height
-        pos_x = t.arange(self.ctx_x, device=device).repeat(self.ctx_y) # w cols with h entries each
-        pos_x = t.cat([pos_x, t.tensor([self.ctx_x], dtype=t.int32, device=device)]) # deal with register
-        pos_x = pos_x.repeat(n_frames)
-        pos_y = t.arange(self.ctx_y, device=device).repeat_interleave(self.ctx_x) # h rows with w entries each
-        pos_y = t.cat([pos_y, t.tensor([self.ctx_y], dtype=t.int32, device=device)]) # deal with register
-        pos_y = pos_y.repeat(n_frames)
-        pos_t = t.arange(n_frames, device=device).repeat_interleave(self.toks_per_frame)
-        pos_t += offset//self.toks_per_frame
-        x[:, :, :, :self.d_x] = self.rotate(x[:, :, :, :self.d_x], pos_x, self.coss_x, self.sins_x) 
-        x[:, :, :, self.d_x:self.d_x+self.d_y] = self.rotate(x[:, :, :, self.d_x:self.d_x+self.d_y], pos_y, self.coss_y, self.sins_y)
-        x[:, :, :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t] = self.rotate(x[:, : , :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t], pos_t, self.coss_t, self.sins_t) 
+        x[:, :, :, :self.d_x] = self.rotate(x[:, :, :, :self.d_x], self.pos_x, self.coss_x, self.sins_x) 
+        x[:, :, :, self.d_x:self.d_x+self.d_y] = self.rotate(x[:, :, :, self.d_x:self.d_x+self.d_y], self.pos_y, self.coss_y, self.sins_y)
+        x[:, :, :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t] = self.rotate(x[:, : , :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t], self.pos_t+(offset//self.toks_per_frame), self.coss_t, self.sins_t) 
         return x
 
         
