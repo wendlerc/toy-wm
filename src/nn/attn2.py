@@ -3,14 +3,11 @@ import torch.nn as nn
 from torch.nn import functional as F
 from matplotlib import pyplot as plt
 
-try:
-    from flash_attn import flash_attn_func
-    _has_flashattn = True
-except ImportError:
-    _has_flashattn = False
+from torch.nn.attention.flex_attention import flex_attention
+
 
 class Attention(nn.Module):
-    def __init__(self, d_model, n_heads, causal=True, debug=False, use_flash=True, rope=None):
+    def __init__(self, d_model, n_heads, causal=True, debug=False, use_flex=True, rope=None):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
@@ -24,9 +21,7 @@ class Attention(nn.Module):
         self.lnq = nn.LayerNorm(self.d_head)
         self.lnk = nn.LayerNorm(self.d_head)
         self.rope = rope
-        if use_flash and not _has_flashattn:
-            raise ImportError("flash-attn is not installed.")
-        self.use_flash = use_flash
+        self.use_flex = use_flex
 
     def forward(self, x):
         # x: batch x seq x d_model
@@ -41,22 +36,26 @@ class Attention(nn.Module):
         if self.rope is not None:
             q = self.rope(q)
             k = self.rope(k)
-        if self.use_flash:
-            # flash_attn_func expects shape (batch, seqlen, nheads, d_head) and fp16/bf16 on CUDA
-            q_flash = q.contiguous()
-            k_flash = k.contiguous()
-            v_flash = v.contiguous()
-            # shape: (batch, seq, n_heads, d_head)
-            # flash_attn_func(q, k, v, dropout_p, softmax_scale, causal)
-            softmax_scale = self.d_head ** (-0.5)
-            z = flash_attn_func(q_flash, k_flash, v_flash, 0.0, softmax_scale, self.causal)
-            # output: (batch, seq, n_heads, d_head) --> we don't need to permute to that order
+        if self.use_flex:
+            # flex_attention expects (batch, seqlen, nheads, d_head)
+            if not self.causal:
+                def mod(score, b, h, q_idx, kv_idx):
+                    return score
+            else:
+                def mod(score, b, h, q_idx, kv_idx):
+                    return t.where(q_idx >= kv_idx, score, float("-inf"))
+            # flex attn expects batch x nhead x seq x dhead
+            z = flex_attention(q.permute(0, 2, 1, 3), 
+                                          k.permute(0, 2, 1, 3), 
+                                          v.permute(0, 2, 1, 3), 
+                                          score_mod=mod, scale=1.0)
+            z = z.permute(0, 2, 1, 3)
         else:
             q = q.permute(0, 2, 1, 3)
             k = k.permute(0, 2, 1, 3)
             v = v.permute(0, 2, 1, 3)
             # q, k, v: (batch, n_heads, seq, d_head)
-            attn = q @ k.permute(0, 1, 3, 2) * self.d_head ** (-0.5)  # batch x nh x seqq x seqk
+            attn = q @ k.permute(0, 1, 3, 2)  # batch x nh x seqq x seqk
             if self.causal:
                 attn = t.where(self.mask(s), attn, float("-inf"))
             probas = attn.softmax(dim=-1)
@@ -85,51 +84,44 @@ if __name__ == "__main__":
     import time
     t.manual_seed(0)
     
-    # Flash attention requires CUDA
-    device = 'cuda' if t.cuda.is_available() and _has_flashattn else 'cpu'
+    # No device or dtype restriction for flex_attention (assuming it supports both CUDA and CPU)
+    device = 'cuda' if t.cuda.is_available() else 'cpu'
     
-    attn = Attention(384, 6, use_flash=False).to(device)
-    attn_flash = Attention(384, 6, use_flash=True).to(device) if _has_flashattn and t.cuda.is_available() else None
+    attn = Attention(384, 6, use_flex=False, causal=False).to(device)
+    attn_flex = Attention(384, 6, use_flex=True, causal=False).to(device)
+    #attn = t.compile(attn)
+    #attn_flex = t.compile(attn_flex)
     
-    # Flash attention requires fp16 or bf16
-    if _has_flashattn and t.cuda.is_available():
-        attn = attn.to(t.bfloat16)
-        attn_flash = attn_flash.to(t.bfloat16)
-        x = t.rand(64, 65*30, 384, device=device, dtype=t.bfloat16)
-    else:
-        x = t.rand(64, 65*30, 384, device=device)
+    x = t.rand(32, 65*30, 384, device=device)
     
     with t.no_grad():
-        t.cuda.synchronize()
+        if device == "cuda":
+            t.cuda.synchronize()
         start_time = time.time()
         for _ in range(100):
             y_ref = attn(x)
-        t.cuda.synchronize()
+        if device == "cuda":
+            t.cuda.synchronize()
         elapsed = time.time() - start_time
         print(f"Vanilla Attention forward pass took {elapsed:.6f} seconds")
     
-    if _has_flashattn and t.cuda.is_available():
-        # Copy the weights for equivalence
-        attn_flash.load_state_dict(attn.state_dict())
-        attn_flash.eval()
-        attn.eval()
-        
-        with t.no_grad():
-            t.cuda.synchronize()
-            start_time = time.time()
-            for _ in range(100):
-                y_flash = attn_flash(x)
-            t.cuda.synchronize()
-            elapsed = time.time() - start_time
-            print(f"Flash Attention forward pass took {elapsed:.6f} seconds")
-        
-        print(f"Max absolute difference: {t.abs(y_ref - y_flash).max().item()}")
-        print(f"Mean absolute difference: {t.abs(y_ref - y_flash).mean().item()}")
-        # Note: Some numerical differences expected due to fp16/bf16 precision and different computation order
-        print("Outputs close (atol=1e-2):", t.allclose(y_ref, y_flash, atol=1e-2, rtol=1e-2))
-    elif _has_flashattn and not t.cuda.is_available():
-        print("flash-attn is installed but CUDA is not available; only vanilla attention tested.")
-    else:
-        print("flash-attn not installed; only vanilla attention tested.")
+    # Copy the weights for equivalence
+    attn_flex.load_state_dict(attn.state_dict())
+    attn_flex.eval()
+    attn.eval()
     
+    with t.no_grad():
+        if device == "cuda":
+            t.cuda.synchronize()
+        start_time = time.time()
+        for _ in range(100):
+            y_flex = attn_flex(x)
+        if device == "cuda":
+            t.cuda.synchronize()
+        elapsed = time.time() - start_time
+        print(f"Flex Attention forward pass took {elapsed:.6f} seconds")
+    
+    print(f"Max absolute difference: {t.abs(y_ref - y_flex).max().item()}")
+    print(f"Mean absolute difference: {t.abs(y_ref - y_flex).mean().item()}")
+    print("Outputs close (atol=1e-2):", t.allclose(y_ref, y_flex, atol=1e-2, rtol=1e-2))
     print(f"Input shape: {x.shape}, Output shape: {y_ref.shape}")
