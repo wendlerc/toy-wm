@@ -8,6 +8,7 @@ from typing import Optional
 from torch.nn.attention.flex_attention import flex_attention
 from matplotlib import pyplot as plt
 
+from pdb import set_trace
 
 class KVCache(nn.Module):
     """
@@ -204,10 +205,13 @@ class KVCacheNaive(nn.Module):
 class AttentionEinOps(nn.Module):
     IGNORE: Float[Tensor, ""]
 
-    def __init__(self, d_model, n_heads, rope=None):
+    def __init__(self, d_model, n_heads, rope=None, ln_first=False):
         super().__init__()
         assert d_model % n_heads == 0, f"{d_model} must be divisble by {n_heads}"
         self.d_head = d_model // n_heads
+        self.d_model = d_model
+        self.n_heads = n_heads
+        self.ln_first = ln_first 
         d_head = self.d_head
         self.W_Q = nn.Parameter(t.empty((n_heads, d_model, d_head)))
         self.W_K = nn.Parameter(t.empty((n_heads, d_model, d_head)))
@@ -237,7 +241,6 @@ class AttentionEinOps(nn.Module):
         offset: int = 0
     ) -> Float[Tensor, "batch posq d_model"]:
         assert (k_cache is None and v_cache is None) or (k_cache is not None and v_cache is not None), "k_cache and v_cache go together."
-        d_head = self.d_head
         if k_cache is not None and v_cache is not None:
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
             k_new = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
@@ -245,22 +248,33 @@ class AttentionEinOps(nn.Module):
             
             k = t.cat([k_cache, k_new], dim=1)
             v = t.cat([v_cache, v_new], dim=1)
+            if self.ln_first:
+                q = self.ln1(q)
+                k = self.ln2(k)
 
             if self.rope is not None:
                 q = self.rope(q, offset=k_cache.shape[1]) 
                 k = self.rope(k, offset=0)
-            q = self.ln1(q) # ppl usually do this before rope but our best checkpoint has it after rope, so this is for bwd compatibility; but in quick test on singleframe this did not make a big difference
-            k = self.ln2(k)
+
+            if not self.ln_first:
+                q = self.ln1(q) # ppl usually do this before rope but our best checkpoint has it after rope, so this is for bwd compatibility; but in quick test on singleframe this did not make a big difference
+                k = self.ln2(k)
             mask = None
         else:
             q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
             k = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
             v = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') + self.b_V
+            if self.ln_first:
+                q = self.ln1(q)
+                k = self.ln2(k)
+
             if self.rope is not None:
                 q = self.rope(q)
                 k = self.rope(k)
-            q = self.ln1(q)
-            k = self.ln2(k) 
+            
+            if not self.ln_first:
+                q = self.ln1(q)
+                k = self.ln2(k) 
             k_new = k
             v_new = v
 

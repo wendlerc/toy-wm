@@ -14,6 +14,7 @@ model:
   nocompile: false
   checkpoint: null #"experiments/sunny-mountain-634/model.pt" #"experiments/sunny-mountain-634/ckpt-step=005300-metric=0.00103706.pt"
   rope_type: "vid"
+  ln_first: true
 
 train:
   lr1: 0.02
@@ -22,12 +23,12 @@ train:
   weight_decay: 1.0e-5
   max_steps: 100000
   warmup_steps: 500
-  batch_size: 32
+  batch_size: 20
   noclip: false
   duration: 1
   fps: 30
   debug: false
-  dtype: "bf16"
+  dtype: "fp32"
 
 wandb:
   name: null

@@ -22,12 +22,12 @@ train:
   weight_decay: 1.0e-5
   max_steps: 100000
   warmup_steps: 500
-  batch_size: 32
+  batch_size: 20
   noclip: false
   duration: 1
   fps: 30
   debug: false
-  dtype: "bf16"
+  dtype: "fp32"
 
 wandb:
   name: null

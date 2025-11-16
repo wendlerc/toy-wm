@@ -27,6 +27,8 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
+import argparse
+
 # --------------------------
 # Project imports
 # --------------------------
@@ -161,7 +163,7 @@ def _broadcast_ready():
 # --------------------------
 # Model init (pure eager) & warmup
 # --------------------------
-def initialize_model():
+def initialize_model(config_path):
     global model, pred2frame, device, cache
     global noise_buf, action_buf, step_once, server_ready
 
@@ -169,7 +171,8 @@ def initialize_model():
     print("Loading model and preparing GPU runtime...")
     device = _ensure_cuda()
 
-    config_path = os.path.join(project_root, "configs/inference.yaml")
+    # Use the provided config_path from CLI or elsewhere
+    config_path = os.path.abspath(config_path)
     
     # Optimize checkpoint loading: copy to local storage if on network mount
     t0 = time.time()
@@ -563,7 +566,12 @@ def handle_stop_stream():
 # --------------------------
 if __name__ == '__main__':
 
-    initialize_model()
+    parser = argparse.ArgumentParser(description="Pong backend server")
+    parser.add_argument('--config', type=str, default=os.path.join(project_root, "configs/inference.yaml"),
+                        help="Path to inference config YAML (default: configs/inference.yaml)")
+    args = parser.parse_args()
+
+    initialize_model(args.config)
     
     print("Starting Flask server on http://localhost:5000")
     socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True, use_reloader=False)

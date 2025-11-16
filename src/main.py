@@ -42,6 +42,7 @@ if __name__ == "__main__":
     frames, actions = next(iter(loader))
     height, width = frames.shape[-2:]
     C = cmodel.C if "C" in cmodel else 5000
+    ln_first = cmodel.ln_first if "ln_first" in cmodel else False
     model = get_model(height, width, 
                     n_window=cmodel.n_window, 
                     patch_size=cmodel.patch_size, 
@@ -51,7 +52,8 @@ if __name__ == "__main__":
                     in_channels=cmodel.in_channels,
                     bidirectional=cmodel.bidirectional,
                     C=C,
-                    rope_type=cmodel.rope_type)
+                    rope_type=cmodel.rope_type,
+                    ln_first=ln_first)
     if cmodel.checkpoint is not None:
         print(f"Loading model from {cmodel.checkpoint}")
         state_dict = t.load(cmodel.checkpoint, weights_only=False)

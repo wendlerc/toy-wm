@@ -12,10 +12,9 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/fast-surf-641/ckpt-step=008400-metric=0.00180873.pt"
-  #"experiments/super-waterfall-642/ckpt-step=007700-metric=0.00176055.pt"
-  #"experiments/super-waterfall-642/ckpt-step=004000-metric=0.00256524.pt"
-  #"experiments/fast-surf-641/ckpt-step=003500-metric=0.00242279.pt"
+  checkpoint: "experiments/visionary-sea-643/ckpt-step=007400-metric=0.00165806.pt"
+  #"experiments/visionary-sea-643/ckpt-step=002900-metric=0.00310411.pt"
+  #"experiments/visionary-sea-643/ckpt-step=001900-metric=0.00752395.pt"
   #"experiments/fast-surf-641/ckpt-step=001600-metric=0.00634974.pt"
   #"experiments/super-waterfall-642/ckpt-step=001200-metric=0.01600393.pt"
   #visionary-sea-643
@@ -24,7 +23,7 @@ model:
   #"experiments/absurd-oath-640/ckpt-step=059300-metric=0.00111919.pt"
   #"experiments/glowing-violet-635/ckpt-step=031500-metric=0.00135337.pt" 
   #"experiments/absurd-oath-640/ckpt-step=012600-metric=0.00166822.pt"
-  rope_type: "vid"
+  rope_type: "learn"
   #"experiments/worldly-water-607/ckpt-step=005900-metric=0.00670522.pt"
   #"experiments/comic-silence-613/model.pt"
   #checkpoint: "experiments/playful-field-611/model.pt"

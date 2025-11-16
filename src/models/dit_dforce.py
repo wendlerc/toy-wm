@@ -17,14 +17,14 @@ def modulate(x, shift, scale):
     return x * (1 + scale) + shift
 
 class CausalBlock(nn.Module):
-    def __init__(self, layer_idx, d_model, expansion, n_heads, rope=None):
+    def __init__(self, layer_idx, d_model, expansion, n_heads, rope=None, ln_first = False):
         super().__init__()
         self.layer_idx = layer_idx
         self.d_model = d_model
         self.expansion = expansion
         self.n_heads = n_heads
         self.norm1 = nn.LayerNorm(d_model)
-        self.selfattn = AttentionEinOps(d_model, n_heads, rope=rope)
+        self.selfattn = AttentionEinOps(d_model, n_heads, rope=rope, ln_first=ln_first)
         self.norm2 = nn.LayerNorm(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
         
@@ -56,7 +56,8 @@ class CausalDit(nn.Module):
                        debug=False, 
                        rope_C=10000,
                        rope_tmax=None,
-                       rope_type: Literal["rope", "learn", "vid"] = "rope"):
+                       rope_type: Literal["rope", "learn", "vid"] = "rope",
+                       ln_first: bool = False):
         super().__init__()
         self.height = height
         self.width = width
@@ -102,7 +103,7 @@ class CausalDit(nn.Module):
         self.grid_pe = None
         self.rope_tmax = rope_tmax
 
-        self.blocks = nn.ModuleList([CausalBlock(lidx, d_model, expansion, n_heads, rope=self.rope_seq) for lidx in range(n_blocks)])
+        self.blocks = nn.ModuleList([CausalBlock(lidx, d_model, expansion, n_heads, rope=self.rope_seq, ln_first=ln_first) for lidx in range(n_blocks)])
         self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
         self.norm = nn.LayerNorm(d_model)
         self.unpatch = UnPatch(height, width, in_channels=d_model, out_channels=in_channels, patch_size=patch_size)
@@ -185,8 +186,30 @@ class CausalDit(nn.Module):
         return self.parameters().__next__().dtype
 
 
-def get_model(height, width, n_window=5, d_model=64, T=100, n_blocks=2, patch_size=2, n_heads=8, bidirectional=False, in_channels=3, C=10000, rope_type: Literal["rope", "learn", "vid"] = "rope"):
-    return CausalDit(height, width, n_window, d_model, T, in_channels=in_channels, n_blocks=n_blocks, patch_size=patch_size, n_heads=n_heads, bidirectional=bidirectional, rope_C=C, rope_type=rope_type)
+def get_model(height, width, 
+              n_window=5, 
+              d_model=64, 
+              T=100, 
+              n_blocks=2, 
+              patch_size=2, 
+              n_heads=8, 
+              bidirectional=False, 
+              in_channels=3, 
+              C=10000, 
+              rope_type: Literal["rope", "learn", "vid"] = "rope",
+              ln_first=False):
+    return CausalDit(height, width, 
+                     n_window, 
+                     d_model, 
+                     T, 
+                     in_channels=in_channels, 
+                     n_blocks=n_blocks, 
+                     patch_size=patch_size, 
+                     n_heads=n_heads, 
+                     bidirectional=bidirectional, 
+                     rope_C=C, 
+                     rope_type=rope_type,
+                     ln_first=ln_first)
 
 if __name__ == "__main__":
     print("running w/o cache")
