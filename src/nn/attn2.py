@@ -2,6 +2,7 @@ import torch as t
 import torch.nn as nn
 from torch.nn import functional as F
 from matplotlib import pyplot as plt
+from functools import partial
 
 from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
@@ -9,14 +10,19 @@ from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 def causal_mod(score, b, h, q_idx, kv_idx):
     return t.where(q_idx >= kv_idx, score, float("-inf"))
 
+def create_block_causal_mask_mod(block_size):
+    def block_causal_mask_mod(b, h, q_idx, kv_idx):
+        # either q is in a later block or q and k are in the same block
+        return (q_idx >= kv_idx) | ((q_idx // block_size) == (kv_idx // block_size))
+    return block_causal_mask_mod
+
 class Attention(nn.Module):
-    def __init__(self, d_model, n_heads, causal=True, debug=False, use_flex=True, rope=None):
+    def __init__(self, d_model, n_heads, causal=True, use_flex=True, rope=None):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
         self.d_head = d_model // n_heads
         self.causal = causal
-        self.debug = debug
         assert d_model % n_heads == 0, "d_model must be divisible by d_head"
 
         self.QKV = nn.Linear(self.d_model, 3 * self.d_model)
@@ -27,7 +33,7 @@ class Attention(nn.Module):
         self.use_flex = use_flex
         self.scale = 1.0 / (self.d_head ** 0.5)
 
-    def forward(self, x):
+    def forward(self, x, offset=0, mask=None, debug=False):
         # x: batch x seq x d_model
         qkv = self.QKV(x)
         q, k, v = qkv.chunk(3, dim=-1)
@@ -45,12 +51,8 @@ class Attention(nn.Module):
             q_flex = q.permute(0, 2, 1, 3)
             k_flex = k.permute(0, 2, 1, 3)
             v_flex = v.permute(0, 2, 1, 3)
-            #q_flex = t.nested.nested_tensor(q_flex, layout=t.jagged)
-            #k_flex = t.nested.nested_tensor(k_flex, layout=t.jagged)
-            #v_flex = t.nested.nested_tensor(v_flex, layout=t.jagged)
-            if self.causal:
-                z = flex_attention(q_flex, k_flex, v_flex, 
-                                  score_mod=causal_mod, scale=self.scale)
+            if mask is not None:
+                z = flex_attention(q_flex, k_flex, v_flex, scale=self.scale, block_mask = mask)
             else:
                 z = flex_attention(q_flex, k_flex, v_flex, scale=self.scale)
             z = z.permute(0, 2, 1, 3)
@@ -60,11 +62,12 @@ class Attention(nn.Module):
             v = v.permute(0, 2, 1, 3)
             # q, k, v: (batch, n_heads, seq, d_head)
             attn = (q @ k.permute(0, 1, 3, 2)) * self.scale  # batch x nh x seqq x seqk
-            if self.causal:
-                attn = t.where(self.mask(s), attn, float("-inf"))
+            if mask is not None:
+                attn = t.where(mask, attn, float("-inf"))
             probas = attn.softmax(dim=-1)
-            if self.debug:
-                plt.imshow(probas[0, 0].cpu().detach().numpy())
+            if debug:
+                plt.imshow((probas[0, 0] > 0).float().cpu().detach().numpy())
+                plt.savefig(f"probas_{debug}.png")
                 plt.show()
             z = probas @ v
             # z ... batch x nh x seq x dh
@@ -92,9 +95,19 @@ if __name__ == "__main__":
     device = 'cuda' if t.cuda.is_available() else 'cpu'
     dtype = t.bfloat16
 
+    x = t.rand(32, 65*30, 384, device=device, dtype=dtype)
     attn = Attention(384, 6, use_flex=False, causal=True).to(device).to(dtype)
     attn_flex = Attention(384, 6, use_flex=True, causal=True).to(device).to(dtype)
-    
+    def causal_mask(self):
+        size = self.n_window
+        m_self = t.tril(t.ones((size, size), dtype=t.int8, device=self.device)) # - t.tril(t.ones((size, size), dtype=t.int8, device=self.device), diagonal=-self.n_window) # this would be useful if we go bigger than windowxwindow
+        m_self = t.kron(m_self, t.ones((self.toks_per_frame, self.toks_per_frame), dtype=t.int8, device=self.device))
+        m_self = m_self.to(bool)
+        return ~ m_self
+    block_mask = t.tril(t.ones((30, 30), dtype=t.int8, device=device))
+    block_mask = t.kron(block_mask, t.ones((65, 65), dtype=t.int8, device=device))
+    block_mask = block_mask.to(bool)
+    block_mask_flex = create_block_mask(create_block_causal_mask_mod(65), B=None, H=None, Q_LEN=x.shape[1], KV_LEN=x.shape[1])
     # Compile both for fair comparison - CRITICAL for flex attention performance!
     attn_flex.load_state_dict(attn.state_dict())
     attn_flex.eval()
@@ -103,13 +116,13 @@ if __name__ == "__main__":
     attn = t.compile(attn)
     attn_flex = t.compile(attn_flex)
 
-    x = t.rand(32, 65*30, 384, device=device, dtype=dtype)
+    n_rep = 100
     
     # Warmup to trigger compilation
     print("Warming up (compiling)...")
     with t.no_grad():
-        for _ in range(3):
-            _ = attn(x)
+        for idx in range(3):
+            _ = attn(x, mask = block_mask)
         if device == "cuda":
             t.cuda.synchronize()
     
@@ -118,18 +131,18 @@ if __name__ == "__main__":
         if device == "cuda":
             t.cuda.synchronize()
         start_time = time.time()
-        for _ in range(500):
-            y_ref = attn(x)
+        for _ in range(n_rep):
+            y_ref = attn(x, mask = block_mask)
         if device == "cuda":
             t.cuda.synchronize()
         elapsed = time.time() - start_time
-        print(f"Vanilla Attention forward pass took {elapsed:.6f} seconds")
+        print(f"{n_rep} x Vanilla Attention forward pass took {elapsed:.6f} seconds")
     
     # Warmup flex attention
     print("Warming up flex attention (compiling)...")
     with t.no_grad():
         for _ in range(3):
-            _ = attn_flex(x)
+            _ = attn_flex(x, mask = block_mask_flex)
         if device == "cuda":
             t.cuda.synchronize()
     
@@ -138,12 +151,12 @@ if __name__ == "__main__":
         if device == "cuda":
             t.cuda.synchronize()
         start_time = time.time()
-        for _ in range(500):
-            y_flex = attn_flex(x)
+        for _ in range(n_rep):
+            y_flex = attn_flex(x, mask = block_mask_flex)
         if device == "cuda":
             t.cuda.synchronize()
         elapsed = time.time() - start_time
-        print(f"Flex Attention forward pass took {elapsed:.6f} seconds")
+        print(f"{n_rep} x Flex Attention forward pass took {elapsed:.6f} seconds")
     
     print(f"Max absolute difference: {t.abs(y_ref - y_flex).max().item()}")
     print(f"Mean absolute difference: {t.abs(y_ref - y_flex).mean().item()}")
