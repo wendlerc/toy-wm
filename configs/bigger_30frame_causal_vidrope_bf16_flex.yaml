@@ -15,6 +15,7 @@ model:
   checkpoint: null #"experiments/sunny-mountain-634/model.pt" #"experiments/sunny-mountain-634/ckpt-step=005300-metric=0.00103706.pt"
   rope_type: "vid"
   ln_first: true
+  use_flex: true
 
 train:
   lr1: 0.02

@@ -127,11 +127,16 @@ class CausalDit(nn.Module):
             nn.SiLU(),
             nn.Linear(d_model, 2 * d_model, bias=True),
         )
-        self.cache = None
-        if not self.bidirectional:
-            self.register_buffer("mask", self.causal_mask())
+        if not self.use_flex:
+            if not self.bidirectional:
+                self.register_buffer("mask", self.causal_mask())
+            else:
+                self.register_buffer("mask", None)
         else:
-            self.register_buffer("mask", None)
+            if not self.bidirectional:
+                self.mask = self.causal_mask()
+            else:
+                self.mask = None
     
     def create_cache(self, batch_size):
         return KVCache(batch_size, self.n_blocks, self.n_heads, self.d_head, self.toks_per_frame, self.n_window, dtype=self.dtype, device=self.device)

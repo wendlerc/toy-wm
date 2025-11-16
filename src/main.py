@@ -43,6 +43,7 @@ if __name__ == "__main__":
     height, width = frames.shape[-2:]
     C = cmodel.C if "C" in cmodel else 5000
     ln_first = cmodel.ln_first if "ln_first" in cmodel else False
+    use_flex = cmodel.use_flex if "use_flex" in cmodel else False
     model = get_model(height, width, 
                     n_window=cmodel.n_window, 
                     patch_size=cmodel.patch_size, 
@@ -53,7 +54,8 @@ if __name__ == "__main__":
                     bidirectional=cmodel.bidirectional,
                     C=C,
                     rope_type=cmodel.rope_type,
-                    ln_first=ln_first)
+                    ln_first=ln_first,
+                    use_flex=use_flex)
     if cmodel.checkpoint is not None:
         print(f"Loading model from {cmodel.checkpoint}")
         state_dict = t.load(cmodel.checkpoint, weights_only=False)
@@ -73,7 +75,7 @@ if __name__ == "__main__":
 
     if not cmodel.nocompile:
         try:
-            model = t.compile(model)
+            model = t.compile(model, mode="max-autotune", fullgraph=False)
             print("Model compiled with torch.compile for acceleration.")
         except AttributeError:
             print("torch.compile is not available in this version of PyTorch; running without compilation.")
