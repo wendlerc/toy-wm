@@ -3,8 +3,10 @@ import torch.nn as nn
 from torch.nn import functional as F
 from matplotlib import pyplot as plt
 
-from torch.nn.attention.flex_attention import flex_attention
+from torch.nn.attention.flex_attention import flex_attention, create_block_mask
 
+def causal_mod(score, b, h, q_idx, kv_idx):
+    return t.where(q_idx >= kv_idx, score, float("-inf"))
 
 class Attention(nn.Module):
     def __init__(self, d_model, n_heads, causal=True, debug=False, use_flex=True, rope=None):
@@ -22,6 +24,7 @@ class Attention(nn.Module):
         self.lnk = nn.LayerNorm(self.d_head)
         self.rope = rope
         self.use_flex = use_flex
+        self.scale = 1.0 / (self.d_head ** 0.5)
 
     def forward(self, x):
         # x: batch x seq x d_model
@@ -37,25 +40,23 @@ class Attention(nn.Module):
             q = self.rope(q)
             k = self.rope(k)
         if self.use_flex:
-            # flex_attention expects (batch, seqlen, nheads, d_head)
-            if not self.causal:
-                def mod(score, b, h, q_idx, kv_idx):
-                    return score
-            else:
-                def mod(score, b, h, q_idx, kv_idx):
-                    return t.where(q_idx >= kv_idx, score, float("-inf"))
             # flex attn expects batch x nhead x seq x dhead
-            z = flex_attention(q.permute(0, 2, 1, 3), 
-                                          k.permute(0, 2, 1, 3), 
-                                          v.permute(0, 2, 1, 3), 
-                                          score_mod=mod, scale=1.0)
+            q_flex = q.permute(0, 2, 1, 3)
+            k_flex = k.permute(0, 2, 1, 3)
+            v_flex = v.permute(0, 2, 1, 3)
+            
+            if self.causal:
+                z = flex_attention(q_flex, k_flex, v_flex, 
+                                  score_mod=causal_mod, scale=self.scale)
+            else:
+                z = flex_attention(q_flex, k_flex, v_flex, scale=self.scale)
             z = z.permute(0, 2, 1, 3)
         else:
             q = q.permute(0, 2, 1, 3)
             k = k.permute(0, 2, 1, 3)
             v = v.permute(0, 2, 1, 3)
             # q, k, v: (batch, n_heads, seq, d_head)
-            attn = q @ k.permute(0, 1, 3, 2)  # batch x nh x seqq x seqk
+            attn = (q @ k.permute(0, 1, 3, 2)) * self.scale  # batch x nh x seqq x seqk
             if self.causal:
                 attn = t.where(self.mask(s), attn, float("-inf"))
             probas = attn.softmax(dim=-1)
@@ -87,13 +88,24 @@ if __name__ == "__main__":
     # No device or dtype restriction for flex_attention (assuming it supports both CUDA and CPU)
     device = 'cuda' if t.cuda.is_available() else 'cpu'
     
-    attn = Attention(384, 6, use_flex=False, causal=False).to(device)
-    attn_flex = Attention(384, 6, use_flex=True, causal=False).to(device)
-    #attn = t.compile(attn)
-    #attn_flex = t.compile(attn_flex)
+    attn = Attention(384, 6, use_flex=False, causal=True).to(device)
+    attn_flex = Attention(384, 6, use_flex=True, causal=True).to(device)
+    
+    # Compile both for fair comparison - CRITICAL for flex attention performance!
+    attn = t.compile(attn)
+    attn_flex = t.compile(attn_flex)
     
     x = t.rand(32, 65*30, 384, device=device)
     
+    # Warmup to trigger compilation
+    print("Warming up (compiling)...")
+    with t.no_grad():
+        for _ in range(3):
+            _ = attn(x)
+        if device == "cuda":
+            t.cuda.synchronize()
+    
+    print("Benchmarking vanilla attention...")
     with t.no_grad():
         if device == "cuda":
             t.cuda.synchronize()
@@ -110,6 +122,15 @@ if __name__ == "__main__":
     attn_flex.eval()
     attn.eval()
     
+    # Warmup flex attention
+    print("Warming up flex attention (compiling)...")
+    with t.no_grad():
+        for _ in range(3):
+            _ = attn_flex(x)
+        if device == "cuda":
+            t.cuda.synchronize()
+    
+    print("Benchmarking flex attention...")
     with t.no_grad():
         if device == "cuda":
             t.cuda.synchronize()
