@@ -15,7 +15,20 @@ import matplotlib.pyplot as plt
 import math
 
 def modulate(x, shift, scale):
-    return x * (1 + scale) + shift
+    b, s, d = x.shape
+    toks_per_frame = s // shift.shape[1]
+    x = x.reshape(b, -1, toks_per_frame, d)
+    x = x * (1 + scale[:, :, None, :]) + shift[:, :, None, :]
+    x = x.reshape(b, s, d)
+    return x
+
+def gate(x, gate):
+    b, s, d = x.shape
+    toks_per_frame = s // gate.shape[1]
+    x = x.reshape(b, -1, toks_per_frame, d)
+    x = x * gate[:, :, None, :]
+    x = x.reshape(b, s, d)
+    return x
 
 class CausalBlock(nn.Module):
     def __init__(self, layer_idx, d_model, expansion, n_heads, rope=None, ln_first = False, use_flex=False):
@@ -24,9 +37,9 @@ class CausalBlock(nn.Module):
         self.d_model = d_model
         self.expansion = expansion
         self.n_heads = n_heads
-        self.norm1 = nn.LayerNorm(d_model)
+        self.norm1 = nn.RMSNorm(d_model)
         self.selfattn = Attention(d_model, n_heads, rope=rope, use_flex=use_flex)
-        self.norm2 = nn.LayerNorm(d_model)
+        self.norm2 = nn.RMSNorm(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
         
         self.modulation = nn.Sequential(
@@ -40,15 +53,15 @@ class CausalBlock(nn.Module):
         mu1, sigma1, c1, mu2, sigma2, c2 = self.modulation(cond).chunk(6, dim=-1)
         residual = z
         z = modulate(self.norm1(z), mu1, sigma1)
-        z = z.to(dtype=self.dtype)
+        #z = z.to(dtype=self.dtype)
         z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=cached_k, v_cache=cached_v)            
-        z = residual + c1*z
+        z = residual + gate(z, c1)
 
         residual = z
         z = modulate(self.norm2(z), mu2, sigma2)
-        z = z.to(dtype=self.dtype)
+        #z = z.to(dtype=self.dtype)
         z = self.geglu(z)
-        z = residual + c2*z
+        z = residual + gate(z, c2)
         return z, k_new, v_new
     
     @property
@@ -117,7 +130,7 @@ class CausalDit(nn.Module):
 
         self.blocks = nn.ModuleList([CausalBlock(lidx, d_model, expansion, n_heads, rope=self.rope_seq, ln_first=ln_first, use_flex=use_flex) for lidx in range(n_blocks)])
         self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
-        self.norm = nn.LayerNorm(d_model)
+        self.norm = nn.RMSNorm(d_model)
         self.unpatch = UnPatch(height, width, in_channels=d_model, out_channels=in_channels, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
@@ -156,7 +169,6 @@ class CausalDit(nn.Module):
         a = self.action_emb(actions) # batch dur d
         ts_scaled = (ts * self.T).clamp(0, self.T - 1).long()
         cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
-        cond = cond.repeat_interleave(self.toks_per_frame, dim=1)
         z = self.patch(z) # batch dur seq d
         if self.grid_pe is not None:
             z = z + self.grid_pe[None, None]

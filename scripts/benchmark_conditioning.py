@@ -21,6 +21,18 @@ class CondBench(nn.Module):
         x = (x.reshape(b, -1, toks_per_frame, d) * scale[:, :, None, :] + shift[:, :, None, :]) * gate[:, :, None, :]
         return x.reshape(b, l, d)
 
+    def repeat_based(self, x, cond, toks_per_frame):
+        # x: b, dur*c*h*w, d
+        # cond: b, dur, d
+        b, l, d = x.shape
+        toks_per_frame = l // cond.shape[1]
+        scale, shift, gate = self.mod(cond).chunk(3, dim=-1)
+        scale = scale.repeat_interleave(toks_per_frame, dim=1)
+        shift = shift.repeat_interleave(toks_per_frame, dim=1)
+        gate = gate.repeat_interleave(toks_per_frame, dim=1)
+        out = (x * scale + shift) * gate
+        return out
+
     def scatter_based(self, x, cond, toks_per_frame):
         # x: b, dur*c*h*w, d
         # cond: b, dur, d
@@ -82,6 +94,7 @@ if __name__ == "__main__":
     # Compile each method from the same model instance
     naive_compiled = t.compile(model.naive, mode="reduce-overhead")
     reshape_compiled = t.compile(model.reshape_based, mode="reduce-overhead")
+    repeat_compiled = t.compile(model.repeat_based, mode="reduce-overhead")
     scatter_compiled = t.compile(model.scatter_based, mode="reduce-overhead")
     
     # Warmup (including compilation)
@@ -93,6 +106,7 @@ if __name__ == "__main__":
     for _ in range(10):
         _ = model.naive(x, cond_expanded)
         _ = model.reshape_based(x, cond_compact, toks_per_frame)
+        _ = model.repeat_based(x, cond_compact, toks_per_frame)
         _ = model.scatter_based(x, cond_compact, toks_per_frame)
     if device == "cuda":
         t.cuda.synchronize()
@@ -102,6 +116,7 @@ if __name__ == "__main__":
     # First call triggers compilation - do it separately
     _ = naive_compiled(x, cond_expanded)
     _ = reshape_compiled(x, cond_compact, toks_per_frame)
+    _ = repeat_compiled(x, cond_compact, toks_per_frame)
     _ = scatter_compiled(x, cond_compact, toks_per_frame)
     if device == "cuda":
         t.cuda.synchronize()
@@ -111,6 +126,7 @@ if __name__ == "__main__":
     for _ in range(50):  # More iterations for compiled code to stabilize
         _ = naive_compiled(x, cond_expanded)
         _ = reshape_compiled(x, cond_compact, toks_per_frame)
+        _ = repeat_compiled(x, cond_compact, toks_per_frame)
         _ = scatter_compiled(x, cond_compact, toks_per_frame)
     if device == "cuda":
         t.cuda.synchronize()
@@ -121,27 +137,33 @@ if __name__ == "__main__":
     with t.no_grad():
         out_naive = model.naive(x, cond_expanded)
         out_reshape = model.reshape_based(x, cond_compact, toks_per_frame)
+        out_repeat = model.repeat_based(x, cond_compact, toks_per_frame)
         out_scatter = model.scatter_based(x, cond_compact, toks_per_frame)
         out_naive_compiled = naive_compiled(x, cond_expanded)
         out_reshape_compiled = reshape_compiled(x, cond_compact, toks_per_frame)
+        out_repeat_compiled = repeat_compiled(x, cond_compact, toks_per_frame)
         out_scatter_compiled = scatter_compiled(x, cond_compact, toks_per_frame)
         
         # Check if results match
         max_diff_reshape = (out_naive - out_reshape).abs().max().item()
+        max_diff_repeat = (out_naive - out_repeat).abs().max().item()
         max_diff_scatter = (out_naive - out_scatter).abs().max().item()
         max_diff_naive_compiled = (out_naive - out_naive_compiled).abs().max().item()
         max_diff_reshape_compiled = (out_reshape - out_reshape_compiled).abs().max().item()
+        max_diff_repeat_compiled = (out_repeat - out_repeat_compiled).abs().max().item()
         max_diff_scatter_compiled = (out_scatter - out_scatter_compiled).abs().max().item()
         
         print(f"Max difference (naive vs reshape_based): {max_diff_reshape:.2e}")
+        print(f"Max difference (naive vs repeat_based): {max_diff_repeat:.2e}")
         print(f"Max difference (naive vs scatter_based): {max_diff_scatter:.2e}")
         print(f"Max difference (naive vs naive_compiled): {max_diff_naive_compiled:.2e}")
         print(f"Max difference (reshape vs reshape_compiled): {max_diff_reshape_compiled:.2e}")
+        print(f"Max difference (repeat vs repeat_compiled): {max_diff_repeat_compiled:.2e}")
         print(f"Max difference (scatter vs scatter_compiled): {max_diff_scatter_compiled:.2e}")
         
-        if (max_diff_reshape < 1e-5 and max_diff_scatter < 1e-5 and 
+        if (max_diff_reshape < 1e-5 and max_diff_repeat < 1e-5 and max_diff_scatter < 1e-5 and 
             max_diff_naive_compiled < 1e-5 and max_diff_reshape_compiled < 1e-5 and 
-            max_diff_scatter_compiled < 1e-5):
+            max_diff_repeat_compiled < 1e-5 and max_diff_scatter_compiled < 1e-5):
             print("✓ All methods produce identical results!")
         else:
             print("✗ Results differ! Check implementation.")
@@ -194,6 +216,28 @@ if __name__ == "__main__":
         t.cuda.synchronize()
     time_reshape_compiled = (time.perf_counter() - start) / n_iterations
     
+    # Time repeat_based method (non-compiled)
+    if device == "cuda":
+        t.cuda.synchronize()
+    start = time.perf_counter()
+    with t.no_grad():
+        for _ in range(n_iterations):
+            _ = model.repeat_based(x, cond_compact, toks_per_frame)
+    if device == "cuda":
+        t.cuda.synchronize()
+    time_repeat = (time.perf_counter() - start) / n_iterations
+    
+    # Time repeat_based method (compiled)
+    if device == "cuda":
+        t.cuda.synchronize()
+    start = time.perf_counter()
+    with t.no_grad():
+        for _ in range(n_iterations):
+            _ = repeat_compiled(x, cond_compact, toks_per_frame)
+    if device == "cuda":
+        t.cuda.synchronize()
+    time_repeat_compiled = (time.perf_counter() - start) / n_iterations
+    
     # Time scatter_based method (non-compiled)
     if device == "cuda":
         t.cuda.synchronize()
@@ -222,6 +266,7 @@ if __name__ == "__main__":
     print("-" * 60)
     print(f"{'naive':<20} {time_naive*1000:>8.3f} ms     {time_naive_compiled*1000:>8.3f} ms     {time_naive/time_naive_compiled:>6.2f}x")
     print(f"{'reshape_based':<20} {time_reshape*1000:>8.3f} ms     {time_reshape_compiled*1000:>8.3f} ms     {time_reshape/time_reshape_compiled:>6.2f}x")
+    print(f"{'repeat_based':<20} {time_repeat*1000:>8.3f} ms     {time_repeat_compiled*1000:>8.3f} ms     {time_repeat/time_repeat_compiled:>6.2f}x")
     print(f"{'scatter_based':<20} {time_scatter*1000:>8.3f} ms     {time_scatter_compiled*1000:>8.3f} ms     {time_scatter/time_scatter_compiled:>6.2f}x")
     
     # Find fastest
@@ -230,6 +275,8 @@ if __name__ == "__main__":
         "naive_compiled": time_naive_compiled,
         "reshape_based": time_reshape,
         "reshape_based_compiled": time_reshape_compiled,
+        "repeat_based": time_repeat,
+        "repeat_based_compiled": time_repeat_compiled,
         "scatter_based": time_scatter,
         "scatter_based_compiled": time_scatter_compiled
     }

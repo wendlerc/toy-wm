@@ -26,8 +26,8 @@ class Attention(nn.Module):
 
         self.QKV = nn.Linear(self.d_model, 3 * self.d_model)
         self.O = nn.Linear(self.d_model, self.d_model)
-        self.lnq = nn.LayerNorm(self.d_head)
-        self.lnk = nn.LayerNorm(self.d_head)
+        self.lnq = nn.RMSNorm(self.d_head)
+        self.lnk = nn.RMSNorm(self.d_head)
         self.rope = rope
         self.use_flex = use_flex
 

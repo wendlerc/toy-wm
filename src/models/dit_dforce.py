@@ -29,9 +29,6 @@ def gate(x, gate):
     x = x.reshape(b, s, d)
     return x
 
-def modulate_deprecated(x, shift, scale):
-    return x * (1 + scale) + shift
-
 class CausalBlock(nn.Module):
     def __init__(self, layer_idx, d_model, expansion, n_heads, rope=None, ln_first = False):
         super().__init__()
