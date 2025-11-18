@@ -24,7 +24,7 @@ train:
   weight_decay: 1.0e-5
   max_steps: 50000
   warmup_steps: 500
-  batch_size: 32
+  batch_size: 92
   noclip: false
   duration: 1
   fps: 30

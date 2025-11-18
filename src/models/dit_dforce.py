@@ -14,6 +14,22 @@ import matplotlib.pyplot as plt
 import math
 
 def modulate(x, shift, scale):
+    b, s, d = x.shape
+    toks_per_frame = s // shift.shape[1]
+    x = x.reshape(b, -1, toks_per_frame, d)
+    x = x * (1 + scale[:, :, None, :]) + shift[:, :, None, :]
+    x = x.reshape(b, s, d)
+    return x
+
+def gate(x, gate):
+    b, s, d = x.shape
+    toks_per_frame = s // gate.shape[1]
+    x = x.reshape(b, -1, toks_per_frame, d)
+    x = x * gate[:, :, None, :]
+    x = x.reshape(b, s, d)
+    return x
+
+def modulate_deprecated(x, shift, scale):
     return x * (1 + scale) + shift
 
 class CausalBlock(nn.Module):
@@ -40,12 +56,12 @@ class CausalBlock(nn.Module):
         residual = z
         z = modulate(self.norm1(z), mu1, sigma1)
         z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=cached_k, v_cache=cached_v)            
-        z = residual + c1*z
+        z = residual + gate(z, c1)
 
         residual = z
         z = modulate(self.norm2(z), mu2, sigma2)
         z = self.geglu(z)
-        z = residual + c2*z
+        z = residual + gate(z, c2)
         return z, k_new, v_new
 
 
@@ -136,7 +152,7 @@ class CausalDit(nn.Module):
         a = self.action_emb(actions) # batch dur d
         ts_scaled = (ts * self.T).clamp(0, self.T - 1).long()
         cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
-        cond = cond.repeat_interleave(self.toks_per_frame, dim=1)
+
         z = self.patch(z) # batch dur seq d
         if self.grid_pe is not None:
             z = z + self.grid_pe[None, None]
