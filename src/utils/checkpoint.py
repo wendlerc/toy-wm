@@ -10,7 +10,8 @@ from typing import Optional, Dict, Any, List
 import torch as t 
 from torch import nn
 
-from ..models.dit_dforce import get_model
+from ..models.dit_dforce import get_model as dit_dforce 
+from ..models.dit import get_model as dit
 from ..config import Config
 
 import yaml
@@ -19,6 +20,12 @@ import yaml
 def load_model_from_config(config_path: str, checkpoint_path: str = None, strict: bool = True) -> nn.Module:
     print(f"loading {config_path}")
     cmodel = Config.from_yaml(config_path).model
+    if cmodel.model_id == "dit_dforce":
+        get_model = dit_dforce
+    elif cmodel.model_id == "dit":
+        get_model = dit
+    else:
+        raise ValueError(f"Invalid model type: {cmodel.model_id}")
     model = get_model(cmodel.height, cmodel.width, 
                     n_window=cmodel.n_window, 
                     patch_size=cmodel.patch_size, 

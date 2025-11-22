@@ -1,10 +1,10 @@
 model:
-  model_id: "dit_dforce"
+  model_id: "dit"
   width: 24
   height: 24
   T: 1000
   in_channels: 3
-  n_window: 30
+  n_window: 29
   patch_size: 3
   n_heads: 6
   d_model: 396
@@ -12,7 +12,9 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/upbeat-haze-704/ckpt-step=000600-metric=0.00060261.pt"
+  checkpoint: "experiments/upbeat-haze-704/ckpt-step=001900-metric=0.00006530.pt"
+  #"experiments/upbeat-haze-704/ckpt-step=001200-metric=0.00013666.pt"
+  #"experiments/upbeat-haze-704/ckpt-step=000600-metric=0.00060261.pt"
   #"experiments/fast-surf-641/ckpt-step=008400-metric=0.00180873.pt"
   #"experiments/super-waterfall-642/ckpt-step=007700-metric=0.00176055.pt"
   #"experiments/super-waterfall-642/ckpt-step=004000-metric=0.00256524.pt"

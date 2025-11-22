@@ -33,12 +33,24 @@ class Attention(nn.Module):
 
     def forward(self, x, offset=0, mask=None, debug=False, k_cache=None, v_cache=None):
         # x: batch x seq x d_model
-        qkv = self.QKV(x)
-        q, k, v = qkv.chunk(3, dim=-1)
-        b, s, d = q.shape
-        q = q.reshape(b, s, self.n_heads, self.d_head)
-        k = k.reshape(b, s, self.n_heads, self.d_head)
-        v = v.reshape(b, s, self.n_heads, self.d_head)
+        if k_cache is None and v_cache is None:
+            qkv = self.QKV(x)
+            q, k, v = qkv.chunk(3, dim=-1)
+            b, s, d = q.shape
+            q = q.reshape(b, s, self.n_heads, self.d_head)
+            k = k.reshape(b, s, self.n_heads, self.d_head)
+            v = v.reshape(b, s, self.n_heads, self.d_head)
+            k_new = k 
+            v_new = v 
+        else:
+            qkv = self.QKV(x)
+            q, k_new, v_new = qkv.chunk(3, dim=-1)
+            b, s, d = q.shape
+            q = q.reshape(b, s, self.n_heads, self.d_head)
+            k_new = k_new.reshape(b, s, self.n_heads, self.d_head)
+            v_new = v_new.reshape(b, s, self.n_heads, self.d_head)
+            k = t.cat([k_cache, k_new], dim=1)
+            v = t.cat([v_cache, v_new], dim=1)
         q = self.lnq(q).to(dtype=self.dtype)
         k = self.lnk(k).to(dtype=self.dtype)
         if self.rope is not None:
@@ -60,8 +72,8 @@ class Attention(nn.Module):
             v = v.permute(0, 2, 1, 3)
             # q, k, v: (batch, n_heads, seq, d_head)
             attn = (q @ k.permute(0, 1, 3, 2)) # batch x nh x seqq x seqk
-            if mask is not None:
-                attn = t.where(mask, attn, float("-inf"))
+            if mask is not None and k_cache is None:
+                attn = t.where(mask[:attn.shape[-2], :attn.shape[-1]], attn, float("-inf"))
             probas = attn.softmax(dim=-1)
             if debug:
                 plt.imshow((probas[0, 0] > 0).float().cpu().detach().numpy())
@@ -72,7 +84,7 @@ class Attention(nn.Module):
             z = z.permute(0, 2, 1, 3)
             # z ... batch x seq x nh x dh
         z = self.O(z.reshape(b, s, d))
-        return z, k_cache, v_cache
+        return z, k_new, v_new
 
     def mask(self, s: int):
         return t.tril(t.ones((s, s), dtype=bool, device=self.device))

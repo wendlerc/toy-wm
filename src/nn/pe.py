@@ -144,9 +144,9 @@ class VidRoPE(nn.Module):
     def forward(self, key_or_query: Float[Tensor, "batch sequence n_head d_head"],
                       offset: int = 0): 
         x = key_or_query 
-        x[:, :, :, :self.d_x] = self.rotate(x[:, :, :, :self.d_x], self.pos_x, self.coss_x, self.sins_x) 
-        x[:, :, :, self.d_x:self.d_x+self.d_y] = self.rotate(x[:, :, :, self.d_x:self.d_x+self.d_y], self.pos_y, self.coss_y, self.sins_y)
-        x[:, :, :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t] = self.rotate(x[:, : , :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t], self.pos_t+(offset//self.toks_per_frame), self.coss_t, self.sins_t) 
+        x[:, :, :, :self.d_x] = self.rotate(x[:, :, :, :self.d_x], self.pos_x[:x.shape[1]], self.coss_x, self.sins_x) 
+        x[:, :, :, self.d_x:self.d_x+self.d_y] = self.rotate(x[:, :, :, self.d_x:self.d_x+self.d_y], self.pos_y[:x.shape[1]], self.coss_y, self.sins_y)
+        x[:, :, :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t] = self.rotate(x[:, : , :, self.d_x+self.d_y:self.d_x+self.d_y+self.d_t], self.pos_t[:x.shape[1]]+(offset//self.toks_per_frame), self.coss_t, self.sins_t) 
         return x
 
         
