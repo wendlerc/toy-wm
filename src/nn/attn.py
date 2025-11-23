@@ -238,7 +238,6 @@ class AttentionEinOps(nn.Module):
         mask: Bool[Tensor, "posq posk"] = None, # the 1s are removed
         k_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None, 
         v_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None,
-        offset: int = 0
     ) -> Float[Tensor, "batch posq d_model"]:
         assert (k_cache is None and v_cache is None) or (k_cache is not None and v_cache is not None), "k_cache and v_cache go together."
         if k_cache is not None and v_cache is not None:

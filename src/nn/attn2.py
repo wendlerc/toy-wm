@@ -31,7 +31,7 @@ class Attention(nn.Module):
         self.rope = rope
         self.use_flex = use_flex
 
-    def forward(self, x, offset=0, mask=None, debug=False, k_cache=None, v_cache=None):
+    def forward(self, x, mask=None, debug=False, k_cache=None, v_cache=None):
         # x: batch x seq x d_model
         if k_cache is None and v_cache is None:
             qkv = self.QKV(x)
@@ -42,6 +42,7 @@ class Attention(nn.Module):
             v = v.reshape(b, s, self.n_heads, self.d_head)
             k_new = k 
             v_new = v 
+            offset = k_cache.shape[1]
         else:
             qkv = self.QKV(x)
             q, k_new, v_new = qkv.chunk(3, dim=-1)
@@ -51,7 +52,8 @@ class Attention(nn.Module):
             v_new = v_new.reshape(b, s, self.n_heads, self.d_head)
             k = t.cat([k_cache, k_new], dim=1)
             v = t.cat([v_cache, v_new], dim=1)
-        q = self.lnq(q).to(dtype=self.dtype)
+            offset = 0
+        q = self.lnq(q, offset=offset).to(dtype=self.dtype)
         k = self.lnk(k).to(dtype=self.dtype)
         if self.rope is not None:
             q = self.rope(q)
