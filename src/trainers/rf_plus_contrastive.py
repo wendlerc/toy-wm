@@ -47,12 +47,13 @@ def train(model, dataloader,
 
         frames = frames.repeat(2, 1, 1, 1, 1)
         actions = actions.repeat(2, 1)
+        ts = ts.repeat(2, 1)
         
         frames = frames.to(device).to(dtype)
         actions = actions.to(device)
-        frame_idcs = t.randint(0, actions.shape[1], (bs,), device=device)
-        action_perturbations = t.randint(0, 4, (bs,), device=device)
-        batch_indices = t.arange(bs, device=device) + bs
+        frame_idcs = t.randint(0, actions.shape[1], (bs,), device=device, dtype=t.int64)
+        action_perturbations = t.randint(0, 4, (bs,), device=device, dtype=actions.dtype)
+        batch_indices = t.arange(bs, device=device, dtype=t.int64) + bs
         actions[batch_indices, frame_idcs] = (actions[batch_indices, frame_idcs] + action_perturbations) % 4
         
         with t.autocast(device_type=device, dtype=dtype):
