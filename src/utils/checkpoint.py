@@ -20,25 +20,43 @@ import yaml
 def load_model_from_config(config_path: str, checkpoint_path: str = None, strict: bool = True) -> nn.Module:
     print(f"loading {config_path}")
     cmodel = Config.from_yaml(config_path).model
+    
     if cmodel.model_id == "dit_dforce":
         get_model = dit_dforce
     elif cmodel.model_id == "dit":
         get_model = dit
     else:
         raise ValueError(f"Invalid model type: {cmodel.model_id}")
-    model = get_model(cmodel.height, cmodel.width, 
-                    n_window=cmodel.n_window, 
-                    patch_size=cmodel.patch_size, 
-                    n_heads=cmodel.n_heads,d_model=cmodel.d_model, 
-                    n_blocks=cmodel.n_blocks, 
-                    T=cmodel.T, 
-                    in_channels=cmodel.in_channels,
-                    bidirectional=cmodel.bidirectional,
-                    rope_type=cmodel.rope_type,
-                    C=cmodel.C)
+
+    model = get_model(
+        cmodel.height, cmodel.width, 
+        n_window=cmodel.n_window, 
+        patch_size=cmodel.patch_size, 
+        n_heads=cmodel.n_heads, d_model=cmodel.d_model, 
+        n_blocks=cmodel.n_blocks, 
+        T=cmodel.T, 
+        in_channels=cmodel.in_channels,
+        bidirectional=cmodel.bidirectional,
+        rope_type=cmodel.rope_type,
+        C=cmodel.C
+    )
+
+    # If checkpoint_path is a folder, find top entry in ckpt_index.json
     if checkpoint_path is None and cmodel.checkpoint is not None:
         checkpoint_path = cmodel.checkpoint
+
     if checkpoint_path is not None:
+        if os.path.isdir(checkpoint_path):
+            index_path = os.path.join(checkpoint_path, "ckpt_index.json")
+            if not os.path.exists(index_path):
+                raise ValueError(f"Directory '{checkpoint_path}' does not contain ckpt_index.json")
+            with open(index_path, "r", encoding="utf-8") as f:
+                d = json.load(f)
+            entries = d.get("entries", [])
+            if not entries or not entries[0].get("path"):
+                raise ValueError(f"No valid entries found in {index_path}")
+            checkpoint_path = entries[0]["path"]
+
         state_dict = t.load(checkpoint_path, weights_only=False)
         if "model" in state_dict:
             state_dict = state_dict["model"]
