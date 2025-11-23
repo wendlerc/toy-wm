@@ -12,7 +12,10 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/eager-meadow-708/ckpt-step=003400-metric=0.07412371.pt"
+  checkpoint: "experiments/eager-meadow-708/ckpt-step=037000-metric=0.03831526.pt"
+  #"experiments/eager-meadow-708/ckpt-step=009900-metric=0.07108468.pt"
+  #"experiments/eager-meadow-708/ckpt-step=004700-metric=0.07397499.pt"
+  #"experiments/eager-meadow-708/ckpt-step=003400-metric=0.07412371.pt"
   #"experiments/upbeat-haze-704/ckpt-step=000600-metric=0.00060261.pt"
   #"experiments/fast-surf-641/ckpt-step=008400-metric=0.00180873.pt"
   #"experiments/super-waterfall-642/ckpt-step=007700-metric=0.00176055.pt"

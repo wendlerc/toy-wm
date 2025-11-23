@@ -138,8 +138,8 @@ class VidRoPE(nn.Module):
         x_perm[:, :, :, odd] = x[:, :, :, even]
         assert x.shape[1] >= 1, f"x.shape[1] must be >= 1, got {x.shape}"
         assert pos_idcs.shape[0] == x.shape[1], f"pos_idcs length {pos_idcs.shape[0]} must match x.shape[1] {x.shape[1]}"
-        if self.cnt % 3 == 2:
-            print(f"pos_idcs: {pos_idcs}")
+        #if self.cnt % 3 == 2:
+        #    print(f"pos_idcs: {pos_idcs} shape {coss.shape}")
         self.cnt += 1
 
         return coss[:,pos_idcs]*x + sins[:,pos_idcs]*x_perm

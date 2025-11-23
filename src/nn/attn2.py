@@ -58,8 +58,8 @@ class Attention(nn.Module):
         if self.rope is not None:
             q = self.rope(q, offset=offset)
             k = self.rope(k)
+            
         if self.use_flex:
-            print("using flex attention")
             # flex attn expects batch x nhead x seq x dhead
             q_flex = q.permute(0, 2, 1, 3)
             k_flex = k.permute(0, 2, 1, 3)
