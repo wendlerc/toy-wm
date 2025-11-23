@@ -64,8 +64,8 @@ def train(model, dataloader,
             x_t = x0 - ts[:, :, None, None, None] * vel_true
             vel_pred, _, _ = model(x_t, actions, ts)
             loss_rf = F.mse_loss(vel_pred[:bs].double(), vel_true[:bs].double(), reduction="mean") 
-            loss_true = F.mse_loss(vel_pred[batch_indices-bs, frame_idcs], vel_true[batch_indices-bs, frame_idcs].double(), reduction="mean")
-            loss_false = F.mse_loss(vel_pred[batch_indices, frame_idcs], vel_true[batch_indices, frame_idcs].double(), reduction="mean")
+            loss_true = (vel_pred[batch_indices-bs, frame_idcs].double() - vel_true[batch_indices-bs, frame_idcs].double()).pow(2).mean(dim=(1, 2, 3))
+            loss_false = (vel_pred[batch_indices, frame_idcs].double() - vel_true[batch_indices, frame_idcs].double()).pow(2).mean(dim=(1, 2, 3))
             logits = (loss_false - loss_true) / temperature
             labels = t.ones(bs, device=device)
             contrastive_loss = F.binary_cross_entropy_with_logits(logits, labels)
