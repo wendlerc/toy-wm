@@ -12,7 +12,8 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/upbeat-haze-704/ckpt-step=001900-metric=0.00006530.pt"
+  checkpoint: "experiments/upbeat-haze-704/ckpt-step=030700-metric=0.00000170.pt"
+  #"experiments/upbeat-haze-704/ckpt-step=001900-metric=0.00006530.pt"
   #"experiments/upbeat-haze-704/ckpt-step=001200-metric=0.00013666.pt"
   #"experiments/upbeat-haze-704/ckpt-step=000600-metric=0.00060261.pt"
   #"experiments/fast-surf-641/ckpt-step=008400-metric=0.00180873.pt"
