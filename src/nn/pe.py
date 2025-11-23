@@ -127,6 +127,7 @@ class VidRoPE(nn.Module):
         self.register_buffer("pos_x", pos_x)
         self.register_buffer("pos_y", pos_y)
         self.register_buffer("pos_t", pos_t)
+        self.cnt = 0
 
     
     def rotate(self, x, pos_idcs, coss, sins):
@@ -137,6 +138,9 @@ class VidRoPE(nn.Module):
         x_perm[:, :, :, odd] = x[:, :, :, even]
         assert x.shape[1] >= 1, f"x.shape[1] must be >= 1, got {x.shape}"
         assert pos_idcs.shape[0] == x.shape[1], f"pos_idcs length {pos_idcs.shape[0]} must match x.shape[1] {x.shape[1]}"
+        if self.cnt % 3 == 2:
+            print(f"pos_idcs: {pos_idcs}")
+        self.cnt += 1
 
         return coss[:,pos_idcs]*x + sins[:,pos_idcs]*x_perm
 
