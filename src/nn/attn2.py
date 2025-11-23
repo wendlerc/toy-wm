@@ -76,7 +76,6 @@ class Attention(nn.Module):
             # q, k, v: (batch, n_heads, seq, d_head)
             attn = (q @ k.permute(0, 1, 3, 2)) # batch x nh x seqq x seqk
             if mask is not None and k_cache is None:
-                print("applyign mask")
                 attn = t.where(mask[:attn.shape[-2], :attn.shape[-1]], attn, float("-inf"))
             probas = attn.softmax(dim=-1)
             z = probas @ v
