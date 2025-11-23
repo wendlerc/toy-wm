@@ -54,7 +54,7 @@ class CausalBlock(nn.Module):
         residual = z
         z = modulate(self.norm1(z), mu1, sigma1)
         #z = z.to(dtype=self.dtype)
-        z, k_new, v_new = self.selfattn(z, z, mask=mask_self, k_cache=cached_k, v_cache=cached_v)            
+        z, k_new, v_new = self.selfattn(z, mask=mask_self, k_cache=cached_k, v_cache=cached_v)            
         z = residual + gate(z, c1)
 
         residual = z
