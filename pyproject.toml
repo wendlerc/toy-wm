@@ -19,6 +19,7 @@ dependencies = [
     "muon-optimizer",
     "numpy>=2.3.4",
     "omegaconf>=2.3.0",
+    "opencv-python>=4.11.0.86",
     "pillow>=11.3.0",
     "pip>=25.3",
     "pyyaml>=6.0.3",

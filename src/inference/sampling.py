@@ -31,3 +31,19 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
             v_pred = v_neg + cfg * (v_pred - v_neg)
         z_prev = z_prev + (ts[i] - ts[i+1])*v_pred 
     return z_prev
+
+def sample_video(model, actions, n_steps=4, cfg=0, negative_actions=None, clamp=True, cache=None):
+    batch_size, num_actions = actions.shape
+    if cache is not None:
+        cache.reset()
+    else:
+        cache = model.create_cache(batch_size)
+    frames = t.randn(batch_size, num_actions, 3, 24, 24, device="cpu")
+    for aidx in range(num_actions):
+        noise=t.randn(batch_size, 1, 3, 24, 24, device=model.device)
+        z = sample(model, noise, actions[:, aidx:aidx+1], num_steps=n_steps, cfg=cfg, negative_actions=negative_actions, cache=cache)
+        frames[:, aidx:aidx+1] = z.detach().cpu()
+        if clamp:
+            frames = frames.clamp(-1, 1)
+    return frames
+
