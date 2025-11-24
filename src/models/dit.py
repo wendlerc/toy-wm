@@ -167,7 +167,7 @@ class CausalDit(nn.Module):
             ts = ts.repeat(1, z.shape[1])
 
         a = self.action_emb(actions) # batch dur d
-        ts_scaled = (ts * self.T).clamp(0, self.T - 1).long()
+        ts_scaled = (ts.float() * (self.T - 1)).long()
         cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
         z = self.patch(z) # batch dur seq d
         if self.grid_pe is not None:
@@ -175,7 +175,7 @@ class CausalDit(nn.Module):
 
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
-        if self.bidirectional:
+        if self.bidirectional or cached_k is not None:
             mask_self = None
         else:
             mask_self = self.mask
