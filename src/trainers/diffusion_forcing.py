@@ -6,6 +6,7 @@ from tqdm import tqdm
 from functools import partial
 
 from ..inference.sampling import sample
+from ..eval import basic_control
 from ..utils import log_video, get_muon, lr_lambda
 
 
@@ -14,9 +15,11 @@ def train(model, dataloader,
           lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, 
           max_steps=1000, 
           warmup_steps=100,
+          eval_each_n_steps = 500,
           clipping=True,
           checkpoint_manager=None,
-          device="cuda", dtype=t.float32):
+          device="cuda", 
+          dtype=t.float32):
     print(f"Using device: {device}, dtype: {dtype}")
     optimizer = get_muon(model, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
     scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, partial(lr_lambda, max_steps=max_steps, warmup_steps=warmup_steps))
@@ -24,6 +27,7 @@ def train(model, dataloader,
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
     for step in pbar:
+        model.train()
         log_dict = {}
         optimizer.zero_grad()
         try:
@@ -62,9 +66,10 @@ def train(model, dataloader,
         pbar.set_postfix(loss=loss.item())
         log_dict["loss"] = loss.item()
         log_dict["lr"] = scheduler.get_last_lr()[0]
-        if step % 100 == 0 and pred2frame is not None:
+        if step % eval_each_n_steps == 0 and pred2frame is not None:
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
-            # compute loss per noise level
+            model.eval()
+            # compute loss per noise level; TODO: do this smater as in min_rf repo
             noise_levels = [1., 0.75, 0.5, 0.25, 0.1, 0]
             noise_losses = []
             with t.no_grad():
@@ -90,6 +95,7 @@ def train(model, dataloader,
                     z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             frames_sampled = pred2frame(z_sampled)
             log_dict["sample"] = log_video(frames_sampled)
+            log_dict["control"] = log_video(basic_control(model))
         wandb.log(log_dict)
 
     return model
