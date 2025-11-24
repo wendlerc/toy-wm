@@ -95,7 +95,8 @@ def train(model, dataloader,
                     z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             frames_sampled = pred2frame(z_sampled)
             log_dict["sample"] = log_video(frames_sampled)
-            log_dict["control"] = log_video(basic_control(model))
+            frames_control =basic_control(model)
+            log_dict["control"] = log_video(frames_control)
         wandb.log(log_dict)
 
     return model
