@@ -27,7 +27,9 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
         get_model = dit
     else:
         raise ValueError(f"Invalid model type: {cmodel.model_id}")
-
+    C = cmodel.C if "C" in cmodel else 5000
+    ln_first = cmodel.ln_first if "ln_first" in cmodel else False
+    use_flex = cmodel.use_flex if "use_flex" in cmodel else False
     model = get_model(
         cmodel.height, cmodel.width, 
         n_window=cmodel.n_window, 
@@ -38,7 +40,9 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
         in_channels=cmodel.in_channels,
         bidirectional=cmodel.bidirectional,
         rope_type=cmodel.rope_type,
-        C=cmodel.C
+        C=cmodel.C,
+        ln_first=ln_first,
+        use_flex=use_flex
     )
 
     # If checkpoint_path is a folder, find top entry in ckpt_index.json

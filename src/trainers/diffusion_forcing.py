@@ -20,7 +20,6 @@ def train(model, dataloader,
           checkpoint_manager=None,
           device="cuda", 
           dtype=t.float32):
-    print(f"Using device: {device}, dtype: {dtype}")
     optimizer = get_muon(model, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
     scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, partial(lr_lambda, max_steps=max_steps, warmup_steps=warmup_steps))
 
@@ -96,8 +95,6 @@ def train(model, dataloader,
             frames_sampled = pred2frame(z_sampled)
             log_dict["sample"] = log_video(frames_sampled, fps=30)
             frames_control = basic_control(model)
-            print(frames_sampled.shape, frames_sampled.dtype, frames_sampled.device, frames_sampled.min(), frames_sampled.max())
-            print(frames_control.shape, frames_control.dtype, frames_control.device, frames_control.min(), frames_control.max())
             log_dict["control"] = log_video(frames_control, fps=30)
         wandb.log(log_dict)
 

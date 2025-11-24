@@ -7,7 +7,7 @@ from datetime import datetime
 import torch as t
 from .config import Config
 from omegaconf import OmegaConf
-from .utils.checkpoint import CheckpointManager
+from .utils.checkpoint import CheckpointManager, load_model_from_config
 from .trainers.diffusion_forcing import train
 
 t.set_float32_matmul_precision("high")
@@ -40,33 +40,7 @@ if __name__ == "__main__":
 
     loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
     frames, actions = next(iter(loader))
-    height, width = frames.shape[-2:]
-    C = cmodel.C if "C" in cmodel else 5000
-    ln_first = cmodel.ln_first if "ln_first" in cmodel else False
-    use_flex = cmodel.use_flex if "use_flex" in cmodel else False
-    model = get_model(height, width, 
-                    n_window=cmodel.n_window, 
-                    patch_size=cmodel.patch_size, 
-                    n_heads=cmodel.n_heads,d_model=cmodel.d_model, 
-                    n_blocks=cmodel.n_blocks, 
-                    T=cmodel.T, 
-                    in_channels=cmodel.in_channels,
-                    bidirectional=cmodel.bidirectional,
-                    C=C,
-                    rope_type=cmodel.rope_type,
-                    ln_first=ln_first,
-                    use_flex=use_flex)
-    if cmodel.checkpoint is not None:
-        print(f"Loading model from {cmodel.checkpoint}")
-        state_dict = t.load(cmodel.checkpoint, weights_only=False)
-        if "model" in state_dict:
-            state_dict = state_dict["model"]
-        if "_orig_mod." in list(state_dict.keys())[0]:
-            state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items() if k.startswith("_orig_mod.")}
-        model.load_state_dict(state_dict)
-        print(f"Model loaded from {cmodel.checkpoint}")
-    else:
-        print("No checkpoint found")
+    model = load_model_from_config(args.config)
 
     dtype = t.bfloat16 if ctrain.dtype == "bf16" else t.float32
     print(f"Using device: {device}, dtype: {dtype}")
@@ -75,7 +49,7 @@ if __name__ == "__main__":
 
     if not cmodel.nocompile:
         try:
-            model = t.compile(model, mode="max-autotune", fullgraph=False)
+            model = t.compile(model)#, mode="max-autotune")
             print("Model compiled with torch.compile for acceleration.")
         except AttributeError:
             print("torch.compile is not available in this version of PyTorch; running without compilation.")

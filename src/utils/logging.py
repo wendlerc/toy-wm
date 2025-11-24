@@ -7,8 +7,7 @@ def log_video(z, fps=5):
     Ensures that wandb receives a uint8 tensor in [0, 255].
     z: (B, T, C, H, W) or (T, C, H, W) in [0, 255] uint8 or [0, 1] or [0, 255] float
     """
-    print(f"Logging video with shape: {z.shape}")
-    print(z.shape, z.dtype, z.device, z.min(), z.max())
+
     if z.ndim == 5:
         frames = z[0]        # take first in batch
     elif z.ndim == 4:
