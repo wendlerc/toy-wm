@@ -11,7 +11,7 @@ model:
   n_blocks: 8
   C: 5000
   bidirectional: false
-  nocompile: false
+  nocompile: true
   checkpoint: null  #"experiments/sunny-mountain-634/model.pt" #"experiments/sunny-mountain-634/ckpt-step=005300-metric=0.00103706.pt"
   rope_type: "rope"
   ln_first: true
@@ -24,7 +24,7 @@ train:
   weight_decay: 1.0e-5
   max_steps: 10000
   warmup_steps: 100
-  batch_size: 16 #
+  batch_size: 8 
   noclip: false
   duration: 1
   fps: 30

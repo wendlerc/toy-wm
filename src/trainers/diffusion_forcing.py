@@ -94,9 +94,11 @@ def train(model, dataloader,
                 with t.autocast(device_type=device, dtype=dtype):
                     z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             frames_sampled = pred2frame(z_sampled)
-            log_dict["sample"] = log_video(frames_sampled)
-            frames_control =basic_control(model)
-            log_dict["control"] = log_video(frames_control)
+            log_dict["sample"] = log_video(frames_sampled, fps=30)
+            frames_control = basic_control(model)
+            print(frames_sampled.shape, frames_sampled.dtype, frames_sampled.device, frames_sampled.min(), frames_sampled.max())
+            print(frames_control.shape, frames_control.dtype, frames_control.device, frames_control.min(), frames_control.max())
+            log_dict["control"] = log_video(frames_control, fps=30)
         wandb.log(log_dict)
 
     return model

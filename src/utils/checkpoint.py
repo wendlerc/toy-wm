@@ -44,6 +44,8 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
     # If checkpoint_path is a folder, find top entry in ckpt_index.json
     if checkpoint_path is None and cmodel.checkpoint is not None:
         checkpoint_path = cmodel.checkpoint
+    
+    print(f"Loading checkpoint from {checkpoint_path}")
 
     if checkpoint_path is not None:
         if os.path.isdir(checkpoint_path):
