@@ -30,6 +30,7 @@ train:
   fps: 30
   debug: false
   dtype: "bf16"
+  action_dropout: 1.0
 
 wandb:
   name: null

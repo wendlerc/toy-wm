@@ -17,6 +17,7 @@ def train(model, dataloader,
           warmup_steps=100,
           eval_each_n_steps = 500,
           clipping=True,
+          action_dropout=0.2,
           checkpoint_manager=None,
           device="cuda", 
           dtype=t.float32):
@@ -35,7 +36,7 @@ def train(model, dataloader,
             iterator = iter(dataloader)
             frames, actions = next(iterator)
         
-        mask = t.rand_like(actions, device=device, dtype=dtype) < 0.2
+        mask = t.rand_like(actions, device=device, dtype=dtype) <= action_dropout
         actions[mask] = 0
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
         
