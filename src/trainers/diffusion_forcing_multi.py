@@ -36,8 +36,6 @@ def train(model, dataloader,
             iterator = iter(dataloader)
             frames, actions = next(iterator)
         
-        mask = t.rand_like(actions, device=device, dtype=dtype) <= action_dropout
-        actions[mask] = 0
         ts = F.sigmoid(t.randn(frames.shape[0], frames.shape[1], device=device, dtype=dtype))
         
         if frames.shape[1] > model.n_window:
@@ -48,6 +46,8 @@ def train(model, dataloader,
         
         frames = frames.to(device).to(dtype)
         actions = actions.to(device)
+        mask = t.rand_like(actions, device=device, dtype=dtype) <= action_dropout
+        actions[mask] = t.randint_like(actions[mask], 1, 4, device=actions.device, dtype=actions.dtype)
         
         with t.autocast(device_type=device, dtype=dtype):
             ts = ts[:,:model.n_window]
