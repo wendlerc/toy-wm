@@ -48,4 +48,10 @@ def basic_control(model, n_steps=6):
     frames = fixed2frame(pred)  
     return annotate_frames(frames, actions)
     
-    
+
+def basic_control_multi(model, n_steps=6):
+    actions = t.tensor(30*[1] + 60*[2] + 60*[3] + 30*[0], dtype=t.int32, device=model.device).unsqueeze(0)
+    actions = t.cat([actions.unsqueeze(-1), actions.unsqueeze(-1)], dim=-1)
+    pred = sample_video(model, actions, n_steps=n_steps)
+    frames = fixed2frame(pred)  
+    return annotate_frames(frames, actions[:,:,0])

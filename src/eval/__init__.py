@@ -1,1 +1,1 @@
-from .control import basic_control
+from .control import basic_control, basic_control_multi

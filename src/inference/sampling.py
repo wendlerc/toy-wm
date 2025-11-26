@@ -33,7 +33,8 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
     return z_prev
 
 def sample_video(model, actions, n_steps=4, cfg=0, negative_actions=None, clamp=True, cache=None):
-    batch_size, num_actions = actions.shape
+    batch_size = actions.shape[0]
+    num_actions = actions.shape[1]
     if cache is not None:
         cache.reset()
     else:

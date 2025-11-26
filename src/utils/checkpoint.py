@@ -11,7 +11,8 @@ import torch as t
 from torch import nn
 
 from ..models.dit_dforce import get_model as dit_dforce 
-from ..models.dit import get_model as dit
+from ..models.dit import get_model as dit 
+from ..models.dit_multi import get_model as dit_multi
 from ..config import Config
 
 import yaml
@@ -25,6 +26,8 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
         get_model = dit_dforce
     elif cmodel.model_id == "dit":
         get_model = dit
+    elif cmodel.model_id == "dit_multi":
+        get_model = dit_multi
     else:
         raise ValueError(f"Invalid model type: {cmodel.model_id}")
     C = cmodel.C if "C" in cmodel else 5000

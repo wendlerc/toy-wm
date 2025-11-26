@@ -33,7 +33,6 @@ def switch_player_colors(frames):
     red = t.tensor([255, 0, 0], dtype=z.dtype)
     mask_cyan = (z == cyan).all(dim=1)
     mask_red = (z == red).all(dim=1)
-    print(mask_cyan.sum(), mask_red.sum())
     z[mask_cyan] = z[mask_cyan] * 0 + red.unsqueeze(0)
     z[mask_red] = z[mask_red]* 0 + cyan.unsqueeze(0)
     z = rearrange(z, "(b dur h w) c -> b dur c h w", b=b, dur=dur, c=c, h=h, w=w)
@@ -62,10 +61,11 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, pin_memory=True,
     frames_both = (frames_both.float()/255.0 - 0.5)*2
 
     frames_both = frames_both[:, 1:]
-    actions_cyan = actions_cyan[:, :-1]
-    actions_red = actions_red[:, :-1] 
+    actions_cyan = actions_cyan[:, :-1].unsqueeze(-1)
+    actions_red = actions_red[:, :-1].unsqueeze(-1)
+    actions = t.cat([actions_cyan, actions_red], dim=-1)
     
-    dataset = TensorDataset(frames_both, actions_cyan, actions_red)
+    dataset = TensorDataset(frames_both, actions)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, pin_memory=pin_memory, num_workers=num_workers)
     print(f"{frames.shape[0]//batch_size} batches")
     return loader, fixed2frame
