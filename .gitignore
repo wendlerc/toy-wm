@@ -4,6 +4,7 @@ data/
 wandb/
 .venv/
 experiments/
+*.mp4
 *.npy
 *.png
 *.gif
