@@ -22,18 +22,15 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
         
         actions1[:, :, 0][actions1[:,:,0] != 0] = 0
         actions2[:, :, 1][actions2[:,:,1] != 0] = 0
-        # later can be made more efficient by batching
-        v_pred1, k_new1, v_new1 = v(z_prev.to(device), actions1.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)    
-        v_pred2, k_new2, v_new2 = v(z_prev.to(device), actions2.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)        
-        v_pred = 0.5 * v_pred1 + 0.5 * v_pred2
-        k_new = 0.5 * k_new1 + 0.5 * k_new2 
-        v_new = 0.5 * v_new1 + 0.5 * v_new2
-        if cfg > 0:
-            if negative_actions is not None:
-                v_neg, _, _ = v(z_prev.to(device), negative_actions.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)
-            else:
-                v_neg, _, _ = v(z_prev.to(device), t.zeros_like(actions, dtype=t.long, device=device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)
-            v_pred = v_neg + cfg * (v_pred - v_neg)
+        if negative_actions is None:
+            negative_actions = t.zeros_like(actions, dtype=t.long, device=device)
+        actions_batch = t.cat([actions1, actions2, negative_actions], dim=0)
+        z_prev_batch = z_prev.repeat(3, 1, 1, 1, 1)
+        t_cond_batch = t_cond.repeat(3, 1)
+        v_pred, k_new, v_new = v(z_prev_batch, actions_batch, t_cond_batch, cached_k=cached_k, cached_v=cached_v)
+        v_1, v_2, v_neg = v_pred.chunk(3, dim=0)
+        v_pred = 0.5*v_1 + 0.5*v_2 
+        v_pred = v_neg + cfg * (v_pred - v_neg)
         z_prev = z_prev + (ts[i] - ts[i+1])*v_pred 
 
     if cache is not None:

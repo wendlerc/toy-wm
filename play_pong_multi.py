@@ -181,7 +181,7 @@ def initialize_model(config_path):
     model.to(device)  # Move model to GPU before activating cache
     model.eval()
     
-    cache = model.create_cache(1)  # Cache will now be created on the same device as model
+    cache = model.create_cache(3)  # Cache will now be created on the same device as model
     
     # Configure dynamo to prevent recompilation from cache state changes
     # allow_unspec_int_on_nn_module prevents recompilation when cache pointer attributes
