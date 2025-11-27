@@ -29,7 +29,7 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
         t_cond_batch = t_cond.repeat(3, 1)
         v_pred, k_new, v_new = v(z_prev_batch, actions_batch, t_cond_batch, cached_k=cached_k, cached_v=cached_v)
         v_1, v_2, v_neg = v_pred.chunk(3, dim=0)
-        v_pred = 0.5*v_1 + 0.5*v_2 
+        v_pred = v_1 + v_2 
         v_pred = v_neg + cfg * (v_pred - v_neg)
         z_prev = z_prev + (ts[i] - ts[i+1])*v_pred 
 
