@@ -12,7 +12,7 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: null  #"experiments/sunny-mountain-634/model.pt" #"experiments/sunny-mountain-634/ckpt-step=005300-metric=0.00103706.pt"
+  checkpoint: "experiments/avid-leaf-770/"  #"experiments/sunny-mountain-634/model.pt" #"experiments/sunny-mountain-634/ckpt-step=005300-metric=0.00103706.pt"
   rope_type: "rope"
   ln_first: true
   use_flex: true
