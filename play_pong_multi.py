@@ -202,7 +202,8 @@ def initialize_model(config_path):
     @_dynamo.disable
     def _step(model_, action_p1: int, action_p2: int, n_steps: int, cfg: float, clamp: bool, cache=cache):
         # Match the notebook logic exactly: create fresh noise each time
-        noise = t.randn(1, 1, 3, 24, 24, device=device)
+        # Use model's dtype to match model parameters (avoids layer norm dtype mismatch)
+        noise = t.randn(1, 1, 3, 24, 24, device=device, dtype=model_.dtype)
         action_buf[0, 0, 0] = action_p1
         action_buf[0, 0, 1] = action_p2
 

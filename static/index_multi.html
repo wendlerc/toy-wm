@@ -51,7 +51,7 @@
       </div>
       <img id="frame" alt="Latest frame" />
       <div id="actionDisplay" style="margin-top: 12px; font-size: 16px; font-family: monospace;">
-        Action: <span id="actionValueP2">-</span> (red paddle) <span id="actionValueP1">-</span> (blue paddle)
+        Red: <span id="actionValueP2">-</span> Cyan: <span id="actionValueP1">-</span>
       </div>
       <div id="fpsDisplay" style="margin-top: 8px; font-size: 16px; font-family: monospace;">
         Achieved FPS: <span id="fpsValue">-</span>
@@ -151,41 +151,91 @@
       });
 
       // Keyboard controls for paddle
-      // Actions: 0=NOOP, 1=UP, 2=DOWN
+      // Track current key states for both players
+      // 0=init, 1=NOOP, 2=UP, 3=DOWN
+      let current_action_p1 = 0; // Start with 0 (init)
+      let current_action_p2 = 0; // Start with 0 (init)
+      let first_action_taken_p1 = false; // Track if first action has been taken
+      let first_action_taken_p2 = false; // Track if first action has been taken
+      
+      function sendActions() {
+        // Send both actions together atomically
+        socket.emit('action', { action_p1: current_action_p1, action_p2: current_action_p2 });
+      }
+      
+      // Send initial state when stream starts
+      socket.on('stream_started', () => {
+        // Reset to initial state
+        current_action_p1 = 0;
+        current_action_p2 = 0;
+        first_action_taken_p1 = false;
+        first_action_taken_p2 = false;
+        sendActions(); // Send initial (0, 0) state
+      });
+      
       document.addEventListener('keydown', (e) => {
-        let action_p1 = null;
-        let action_p2 = null;
+        let changed = false;
         if (e.key === 'ArrowUp') {
-          action_p1 = 2; // UP
+          if (current_action_p1 !== 2) {
+            current_action_p1 = 2; // UP
+            first_action_taken_p1 = true; // Mark that first action has been taken
+            changed = true;
+          }
+          e.preventDefault();
         } 
-        else if (e.key === 'ArrowDown') {// || e.key === 's' || e.key === 'S') {
-          action_p1 = 3; // DOWN
+        else if (e.key === 'ArrowDown') {
+          if (current_action_p1 !== 3) {
+            current_action_p1 = 3; // DOWN
+            first_action_taken_p1 = true; // Mark that first action has been taken
+            changed = true;
+          }
+          e.preventDefault();
         }
         if (e.key === 'w' || e.key === 'W') {
-          action_p2 = 2; // UP
+          if (current_action_p2 !== 2) {
+            current_action_p2 = 2; // UP
+            first_action_taken_p2 = true; // Mark that first action has been taken
+            changed = true;
+          }
+          e.preventDefault();
         } 
         else if (e.key === 's' || e.key === 'S') {
-          action_p2 = 3; // DOWN
-        }
-
-        if (action_p1 !== null) {
-          socket.emit('action_p1', { action_p1: action_p1 });
+          if (current_action_p2 !== 3) {
+            current_action_p2 = 3; // DOWN
+            first_action_taken_p2 = true; // Mark that first action has been taken
+            changed = true;
+          }
           e.preventDefault();
         }
-        if (action_p2 !== null) {
-          socket.emit('action_p2', { action_p2: action_p2 });
-          e.preventDefault();
+        
+        if (changed) {
+          sendActions();
         }
       });
 
       document.addEventListener('keyup', (e) => {
+        let changed = false;
         if (['ArrowUp', 'ArrowDown'].includes(e.key)) {
-          socket.emit('action_p1', { action_p1: 1 }); // NOOP when key released
+          // After first action, default to 1 (NOOP), otherwise stay at 0
+          const new_action = first_action_taken_p1 ? 1 : 0;
+          if (current_action_p1 !== new_action) {
+            current_action_p1 = new_action;
+            changed = true;
+          }
           e.preventDefault();
         }
         if (['w', 'W', 's', 'S'].includes(e.key)) {
-          socket.emit('action_p2', { action_p2: 1 }); // NOOP when key released
+          // After first action, default to 1 (NOOP), otherwise stay at 0
+          const new_action = first_action_taken_p2 ? 1 : 0;
+          if (current_action_p2 !== new_action) {
+            current_action_p2 = new_action;
+            changed = true;
+          }
           e.preventDefault();
+        }
+        
+        if (changed) {
+          sendActions();
         }
       });
     </script>

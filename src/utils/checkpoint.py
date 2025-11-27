@@ -21,6 +21,12 @@ import yaml
 def load_model_from_config(config_path: str, checkpoint_path: str = None, strict: bool = True) -> nn.Module:
     print(f"loading {config_path}")
     cmodel = Config.from_yaml(config_path).model
+    ctrain = Config.from_yaml(config_path).train
+    dtype = ctrain.dtype if "dtype" in ctrain else t.float32 
+    if dtype == "bf16" or dtype == "bfloat16":
+        dtype = t.bfloat16
+    elif dtype == "fp16" or dtype == "float16":
+        dtype = t.float16
     
     if cmodel.model_id == "dit_dforce":
         get_model = dit_dforce
@@ -73,7 +79,8 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
             state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items() if k.startswith("_orig_mod.")}
         model.load_state_dict(state_dict, strict=strict)
         print('loaded state dict')
-    return model
+
+    return model.to(dtype)
 
     
 
