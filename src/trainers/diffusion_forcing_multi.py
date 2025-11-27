@@ -47,7 +47,7 @@ def train(model, dataloader,
         frames = frames.to(device).to(dtype)
         actions = actions.to(device)
         mask = t.rand_like(actions, device=device, dtype=dtype) <= action_dropout
-        actions[mask] = t.randint_like(actions[mask], 1, 4, device=actions.device, dtype=actions.dtype)
+        actions[mask] = t.randint_like(actions[mask], 0, 4, device=actions.device, dtype=actions.dtype)
         
         with t.autocast(device_type=device, dtype=dtype):
             ts = ts[:,:model.n_window]
