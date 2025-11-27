@@ -17,8 +17,17 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
         if cache is not None:
             cached_k, cached_v = cache.get()
 
-        v_pred, k_new, v_new = v(z_prev.to(device), actions.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)            
-
+        actions1 = actions.clone()
+        actions2 = actions.clone()
+        
+        actions1[:, :, 0][actions1[:,:,0] != 0] = 0
+        actions2[:, :, 1][actions2[:,:,1] != 0] = 0
+        # later can be made more efficient by batching
+        v_pred1, k_new1, v_new1 = v(z_prev.to(device), actions1.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)    
+        v_pred2, k_new2, v_new2 = v(z_prev.to(device), actions2.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)        
+        v_pred = 0.5 * v_pred1 + 0.5 * v_pred2
+        k_new = 0.5 * k_new1 + 0.5 * k_new2 
+        v_new = 0.5 * v_new1 + 0.5 * v_new2
         if cfg > 0:
             if negative_actions is not None:
                 v_neg, _, _ = v(z_prev.to(device), negative_actions.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)

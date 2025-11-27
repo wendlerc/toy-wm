@@ -32,7 +32,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from src.utils.checkpoint import load_model_from_config
-from src.trainers.diffusion_forcing import sample
+from src.inference.sampling_multi import sample
 from src.datasets.pong1m import get_loader, fixed2frame
 from src.config import Config
 
