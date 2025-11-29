@@ -44,7 +44,7 @@ def sample_video(model, actions, n_steps=4, cfg=0, negative_actions=None, clamp=
     if cache is not None:
         cache.reset()
     else:
-        cache = model.create_cache(batch_size)
+        cache = model.create_cache(3*batch_size)
     frames = t.randn(batch_size, num_actions, 3, 24, 24, device="cpu", dtype=model.dtype)
     for aidx in range(num_actions):
         noise=t.randn(batch_size, 1, 3, 24, 24, device=model.device, dtype=model.dtype)

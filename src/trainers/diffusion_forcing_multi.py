@@ -5,7 +5,7 @@ import wandb
 from tqdm import tqdm
 from functools import partial
 
-from ..inference.sampling import sample
+from ..inference.sampling_multi import sample
 from ..eval import basic_control_multi as basic_control
 from ..utils import log_video, get_muon, lr_lambda
 
@@ -47,7 +47,7 @@ def train(model, dataloader,
         frames = frames.to(device).to(dtype)
         actions = actions.to(device)
         mask = t.rand_like(actions, device=device, dtype=dtype) <= action_dropout
-        actions[mask] = t.randint_like(actions[mask], 0, 4, device=actions.device, dtype=actions.dtype)
+        actions[mask] = 0 # t.randint_like(actions[mask], 0, 4, device=actions.device, dtype=actions.dtype)
         
         with t.autocast(device_type=device, dtype=dtype):
             ts = ts[:,:model.n_window]
