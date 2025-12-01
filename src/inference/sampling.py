@@ -1,10 +1,10 @@
 import torch as t
 
 @t.no_grad()
-def sample(v, z, actions, num_steps=10, cfg=0, negative_actions=None, cache=None):
+def sample(v, z, actions, num_steps=10, cfg=1.0, negative_actions=None, cache=None):
     return sample_with_grad(v, z, actions, num_steps, cfg, negative_actions, cache=cache)
 
-def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, cache=None):
+def sample_with_grad(v, z, actions, num_steps=10, cfg=1.0, negative_actions=None, cache=None):
     device = v.device
     ts = 1 - t.linspace(0, 1, num_steps+1, device=device)
     ts = 3*ts/(2*ts + 1)
@@ -33,7 +33,7 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
 
     return z_prev
 
-def sample_video(model, actions, n_steps=4, cfg=0, negative_actions=None, clamp=True, cache=None):
+def sample_video(model, actions, n_steps=4, cfg=1.0, negative_actions=None, clamp=True, cache=None):
     batch_size = actions.shape[0]
     num_actions = actions.shape[1]
     if cache is not None:
