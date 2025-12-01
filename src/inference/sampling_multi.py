@@ -20,8 +20,8 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=1., negative_actions=None,
         actions1 = actions.clone()
         actions2 = actions.clone()
         
-        actions1[:, :, 0][actions1[:,:,0] != 0] = 0
-        actions2[:, :, 1][actions2[:,:,1] != 0] = 0
+        actions1[:, :, 0] = 0
+        actions2[:, :, 1] = 0
         if negative_actions is None:
             negative_actions = t.zeros_like(actions, dtype=t.long, device=device)
         actions_batch = t.cat([actions1, actions2, negative_actions], dim=0)
@@ -29,7 +29,11 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=1., negative_actions=None,
         t_cond_batch = t_cond.repeat(3, 1)
         v_pred, k_new, v_new = v(z_prev_batch, actions_batch, t_cond_batch, cached_k=cached_k, cached_v=cached_v)
         v_1, v_2, v_neg = v_pred.chunk(3, dim=0)
-        v_pred = v_1 + v_2 
+        v_pred = t.zeros_like(v_neg, device=device, dtype=v_neg.dtype)
+        if actions1.sum() > 0:
+            v_pred += v_1
+        if actions2.sum() > 0:
+            v_pred += v_2
         v_pred = v_neg + cfg * (v_pred - v_neg)
         z_prev = z_prev + (ts[i] - ts[i+1])*v_pred 
 
