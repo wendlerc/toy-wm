@@ -199,14 +199,12 @@ class KVCacheNaive(nn.Module):
         return self.keys.dtype
 
 
-def causal_mod(score, b, h, q_idx, kv_idx):
-    return t.where(q_idx >= kv_idx, score, float("-inf"))
-
 def create_block_causal_mask_mod(block_size):
     def block_causal_mask_mod(b, h, q_idx, kv_idx):
         # either q is in a later block or q and k are in the same block
         return ((q_idx >= kv_idx) | ((q_idx // block_size) == (kv_idx // block_size)))
     return block_causal_mask_mod
+
 
 class Attention(nn.Module):
     def __init__(self, d_model, n_heads, use_flex=True, rope=None):
@@ -287,6 +285,7 @@ class Attention(nn.Module):
     @property
     def dtype(self):
         return self.QKV.weight.dtype
+
 
 if __name__ == "__main__":
     t.set_float32_matmul_precision("high")
