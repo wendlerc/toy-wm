@@ -10,9 +10,7 @@ from typing import Optional, Dict, Any, List
 import torch as t 
 from torch import nn
 
-from ..models.dit_dforce import get_model as dit_dforce 
 from ..models.dit import get_model as dit 
-from ..models.dit_multi import get_model as dit_multi
 from ..config import Config
 
 import yaml
@@ -28,16 +26,11 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
     elif dtype == "fp16" or dtype == "float16":
         dtype = t.float16
     
-    if cmodel.model_id == "dit_dforce":
-        get_model = dit_dforce
-    elif cmodel.model_id == "dit":
+    if cmodel.model_id == "dit":
         get_model = dit
-    elif cmodel.model_id == "dit_multi":
-        get_model = dit_multi
     else:
         raise ValueError(f"Invalid model type: {cmodel.model_id}")
     C = cmodel.C if "C" in cmodel else 5000
-    ln_first = cmodel.ln_first if "ln_first" in cmodel else False
     use_flex = cmodel.use_flex if "use_flex" in cmodel else False
     model = get_model(
         cmodel.height, cmodel.width, 
@@ -50,7 +43,6 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
         bidirectional=cmodel.bidirectional,
         rope_type=cmodel.rope_type,
         C=cmodel.C,
-        ln_first=ln_first,
         use_flex=use_flex
     )
 

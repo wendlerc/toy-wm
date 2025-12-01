@@ -1,12 +1,12 @@
-from .datasets.pong1m import get_loader
-from .models.dit import get_model
 import wandb
 import argparse
 import os
 from datetime import datetime
 import torch as t
-from .config import Config
 from omegaconf import OmegaConf
+
+from .datasets.pong1m import get_loader
+from .config import Config
 from .utils.checkpoint import CheckpointManager, load_model_from_config
 from .trainers.diffusion_forcing import train
 
@@ -14,7 +14,7 @@ t.set_float32_matmul_precision("high")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()    
-    parser.add_argument("--config", type=str, default="configs/config.yaml")
+    parser.add_argument("--config", type=str, default="configs/default.yaml")
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config)

@@ -1,14 +1,11 @@
-from torch import nn
-from torch.nn import functional as F
 import torch as t
-import einops 
-from jaxtyping import Float, Bool
-from torch import Tensor
-from typing import Optional
-from torch.nn.attention.flex_attention import flex_attention
+import torch.nn as nn
+from torch.nn import functional as F
 from matplotlib import pyplot as plt
+from functools import partial
 
-from pdb import set_trace
+from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+from .norm import RMSNorm
 
 class KVCache(nn.Module):
     """
@@ -201,93 +198,176 @@ class KVCacheNaive(nn.Module):
     def dtype(self):
         return self.keys.dtype
 
-    
-class AttentionEinOps(nn.Module):
-    IGNORE: Float[Tensor, ""]
 
-    def __init__(self, d_model, n_heads, rope=None, ln_first=False):
+def causal_mod(score, b, h, q_idx, kv_idx):
+    return t.where(q_idx >= kv_idx, score, float("-inf"))
+
+def create_block_causal_mask_mod(block_size):
+    def block_causal_mask_mod(b, h, q_idx, kv_idx):
+        # either q is in a later block or q and k are in the same block
+        return ((q_idx >= kv_idx) | ((q_idx // block_size) == (kv_idx // block_size)))
+    return block_causal_mask_mod
+
+class Attention(nn.Module):
+    def __init__(self, d_model, n_heads, use_flex=True, rope=None):
         super().__init__()
-        assert d_model % n_heads == 0, f"{d_model} must be divisble by {n_heads}"
-        self.d_head = d_model // n_heads
         self.d_model = d_model
         self.n_heads = n_heads
-        self.ln_first = ln_first 
-        d_head = self.d_head
-        self.W_Q = nn.Parameter(t.empty((n_heads, d_model, d_head)))
-        self.W_K = nn.Parameter(t.empty((n_heads, d_model, d_head)))
-        self.W_V = nn.Parameter(t.empty((n_heads, d_model, d_head)))
-        self.W_O = nn.Parameter(t.empty((n_heads, d_head, d_model)))
-        self.b_Q = nn.Parameter(t.zeros((n_heads, d_head)))
-        self.b_K = nn.Parameter(t.zeros((n_heads, d_head)))
-        self.b_V = nn.Parameter(t.zeros((n_heads, d_head)))
-        self.b_O = nn.Parameter(t.zeros((d_model)))
-        nn.init.normal_(self.W_Q, 1/d_model**0.5)
-        nn.init.normal_(self.W_K, 1/d_model**0.5)
-        nn.init.normal_(self.W_V, 1/d_model**0.5)
-        nn.init.normal_(self.W_O, 1/d_head**0.5)
-        self.register_buffer("IGNORE", t.tensor(float('-inf'), dtype=t.float32))
+        self.d_head = d_model // n_heads
+        assert d_model % n_heads == 0, "d_model must be divisible by d_head"
+
+        self.QKV = nn.Linear(self.d_model, 3 * self.d_model)
+        self.O = nn.Linear(self.d_model, self.d_model)
+        self.lnq = RMSNorm(self.d_head)
+        self.lnk = RMSNorm(self.d_head)
         self.rope = rope
-        self.ln1 = nn.LayerNorm(d_head)
-        self.ln2 = nn.LayerNorm(d_head)
+        self.use_flex = use_flex
 
-
-    def forward(
-        self, 
-        x_q: Float[Tensor, "batch posq d_model"],
-        x_kv: Float[Tensor, "batch posk d_model"],
-        mask: Bool[Tensor, "posq posk"] = None, # the 1s are removed
-        k_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None, 
-        v_cache: Optional[Float[Tensor, "batch posk n_head d_head"]] = None,
-    ) -> Float[Tensor, "batch posq d_model"]:
-        assert (k_cache is None and v_cache is None) or (k_cache is not None and v_cache is not None), "k_cache and v_cache go together."
-        if k_cache is not None and v_cache is not None:
-            q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
-            k_new = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
-            v_new = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') + self.b_V
-            
+    def forward(self, x, mask=None, k_cache=None, v_cache=None):
+        # x: batch x seq x d_model
+        if k_cache is None and v_cache is None:
+            qkv = self.QKV(x)
+            q, k, v = qkv.chunk(3, dim=-1)
+            b, s, d = q.shape
+            q = q.reshape(b, s, self.n_heads, self.d_head)
+            k = k.reshape(b, s, self.n_heads, self.d_head)
+            v = v.reshape(b, s, self.n_heads, self.d_head)
+            k_new = k 
+            v_new = v 
+            offset = 0
+        else:
+            qkv = self.QKV(x)
+            q, k_new, v_new = qkv.chunk(3, dim=-1)
+            b, s, d = q.shape
+            q = q.reshape(b, s, self.n_heads, self.d_head)
+            k_new = k_new.reshape(b, s, self.n_heads, self.d_head)
+            v_new = v_new.reshape(b, s, self.n_heads, self.d_head)
             k = t.cat([k_cache, k_new], dim=1)
             v = t.cat([v_cache, v_new], dim=1)
-            if self.ln_first:
-                q = self.ln1(q)
-                k = self.ln2(k)
-
-            if self.rope is not None:
-                q = self.rope(q, offset=k_cache.shape[1]) 
-                k = self.rope(k, offset=0)
-
-            if not self.ln_first:
-                q = self.ln1(q) # ppl usually do this before rope but our best checkpoint has it after rope, so this is for bwd compatibility; but in quick test on singleframe this did not make a big difference
-                k = self.ln2(k)
-            mask = None
-        else:
-            q = einops.einsum(x_q, self.W_Q, 'b s d, n d h -> b s n h') + self.b_Q
-            k = einops.einsum(x_kv, self.W_K, 'b s d, n d h -> b s n h') + self.b_K
-            v = einops.einsum(x_kv, self.W_V, 'b s d, n d h -> b s n h') + self.b_V
-            if self.ln_first:
-                q = self.ln1(q)
-                k = self.ln2(k)
-
-            if self.rope is not None:
-                q = self.rope(q)
-                k = self.rope(k)
+            offset = k_cache.shape[1]
+        q = self.lnq(q).to(dtype=self.dtype)
+        k = self.lnk(k).to(dtype=self.dtype)
+        if self.rope is not None:
+            q = self.rope(q, offset=offset)
+            k = self.rope(k)
             
-            if not self.ln_first:
-                q = self.ln1(q)
-                k = self.ln2(k) 
-            k_new = k
-            v_new = v
+        if self.use_flex:
+            # flex attn expects batch x nhead x seq x dhead
+            q_flex = q.permute(0, 2, 1, 3)
+            k_flex = k.permute(0, 2, 1, 3)
+            v_flex = v.permute(0, 2, 1, 3)
+            if mask is not None:
+                z = flex_attention(q_flex, k_flex, v_flex, scale=1., block_mask = mask)
+            else:
+                z = flex_attention(q_flex, k_flex, v_flex, scale=1.)
+            z = z.permute(0, 2, 1, 3)
+        else:
+            q = q.permute(0, 2, 1, 3)
+            k = k.permute(0, 2, 1, 3)
+            v = v.permute(0, 2, 1, 3)
+            # q, k, v: (batch, n_heads, seq, d_head)
+            attn = (q @ k.permute(0, 1, 3, 2)) # batch x nh x seqq x seqk
+            if mask is not None and k_cache is None:
+                attn = t.where(mask[:attn.shape[-2], :attn.shape[-1]], attn, float("-inf"))
+            probas = attn.softmax(dim=-1)
+            z = probas @ v
+            # z ... batch x nh x seq x dh
+            z = z.permute(0, 2, 1, 3)
+            # z ... batch x seq x nh x dh
+        z = self.O(z.reshape(b, s, d))
+        return z, k_new, v_new
 
-        attention = einops.einsum(q, k, 'b sq n h, b sk n h -> b n sq sk')
-        if mask is not None and k_cache is not None:
-            attention = t.where(mask[k_cache.shape[1]:k_cache.shape[1]+q.shape[1], :k.shape[1]], attention, self.IGNORE)
-        elif mask is not None:
-            if attention.shape[-1] != mask.shape[-1] or attention.shape[-2] != mask.shape[-2]:
-                mask = mask[:attention.shape[-1], :attention.shape[-2]]
-            attention = t.where(mask, attention, self.IGNORE) 
-        probas = attention.softmax(dim=3)
-        z = einops.einsum(probas, v, 'b n sq sk, b sk n h -> b sq n h')
-        out = einops.einsum(z, self.W_O, 'b s n h, n h d -> b s n d')
-        out = out.sum(dim=2) + self.b_O
-        return out, k_new, v_new
+    def mask(self, s: int):
+        return t.tril(t.ones((s, s), dtype=bool, device=self.device))
 
+    @property
+    def device(self):
+        return self.QKV.weight.device
 
+    @property
+    def dtype(self):
+        return self.QKV.weight.dtype
+
+if __name__ == "__main__":
+    t.set_float32_matmul_precision("high")
+    t.manual_seed(0)
+    import time
+
+    # No device or dtype restriction for flex_attention (assuming it supports both CUDA and CPU)
+    device = 'cuda' if t.cuda.is_available() else 'cpu'
+    dtype = t.bfloat16
+
+    x = t.rand(32, 65*30, 384, device=device, dtype=dtype)
+    attn = Attention(384, 6, use_flex=False).to(device).to(dtype)
+    attn_flex = Attention(384, 6, use_flex=True).to(device).to(dtype)
+    def causal_mask(self):
+        size = self.n_window
+        m_self = t.tril(t.ones((size, size), dtype=t.int8, device=self.device)) # - t.tril(t.ones((size, size), dtype=t.int8, device=self.device), diagonal=-self.n_window) # this would be useful if we go bigger than windowxwindow
+        m_self = t.kron(m_self, t.ones((self.toks_per_frame, self.toks_per_frame), dtype=t.int8, device=self.device))
+        m_self = m_self.to(bool)
+        return ~ m_self
+    block_mask = t.tril(t.ones((30, 30), dtype=t.int8, device=device))
+    block_mask = t.kron(block_mask, t.ones((65, 65), dtype=t.int8, device=device))
+    block_mask = block_mask.to(bool)
+    block_mask_flex = create_block_mask(create_block_causal_mask_mod(65), B=None, H=None, Q_LEN=x.shape[1], KV_LEN=x.shape[1])
+    
+    block_mask_ = create_block_causal_mask_mod(65)
+    block_mask_test = t.zeros((65*5, 65*5), dtype=bool, device=device)
+    for i in range(65*5):
+        for j in range(65*5):
+            block_mask_test[i, j] = block_mask_(None, None,i, j)
+    plt.imshow(block_mask_test.cpu().detach().numpy())
+    plt.savefig("block_mask_test.png")
+    plt.show()
+    assert (block_mask_test == block_mask[:65*5, :65*5]).all()
+    # Compile both for fair comparison - CRITICAL for flex attention performance!
+    attn_flex.load_state_dict(attn.state_dict())
+    
+    attn = t.compile(attn)
+    attn_flex = t.compile(attn_flex)
+
+    n_rep = 100
+    
+    # Warmup to trigger compilation
+    print("Warming up (compiling)...")
+
+    for idx in range(3):
+        _ = attn(x, mask = block_mask)
+    if device == "cuda":
+        t.cuda.synchronize()
+    
+    print("Benchmarking vanilla attention...")
+
+    if device == "cuda":
+        t.cuda.synchronize()
+    start_time = time.time()
+    for _ in range(n_rep):
+        y_ref, k_cache, v_cache = attn(x, mask = block_mask)
+    if device == "cuda":
+        t.cuda.synchronize()
+    elapsed = time.time() - start_time
+    print(f"{n_rep} x Vanilla Attention forward pass took {elapsed:.6f} seconds")
+
+    # Warmup flex attention
+    print("Warming up flex attention (compiling)...")
+    for _ in range(3):
+        _ = attn_flex(x, mask = block_mask_flex)
+    if device == "cuda":
+        t.cuda.synchronize()
+    
+    print("Benchmarking flex attention...")
+    if device == "cuda":
+        t.cuda.synchronize()
+    start_time = time.time()
+    for _ in range(n_rep):
+        y_flex, k_cache, v_cache = attn_flex(x, mask = block_mask_flex)
+    if device == "cuda":
+        t.cuda.synchronize()
+    elapsed = time.time() - start_time
+    print(f"{n_rep} x Flex Attention forward pass took {elapsed:.6f} seconds")
+    loss = y_flex.sum()
+    loss.backward()
+    print(f"Max absolute difference: {t.abs(y_ref - y_flex).max().item()}")
+    print(f"Mean absolute difference: {t.abs(y_ref - y_flex).mean().item()}")
+    print("Outputs close (atol=1e-2):", t.allclose(y_ref, y_flex, atol=1e-2, rtol=1e-2))
+    print(f"Input shape: {x.shape}, Output shape: {y_ref.shape}")

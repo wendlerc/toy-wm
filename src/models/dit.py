@@ -2,11 +2,11 @@ import torch as t
 from torch import nn
 import torch.nn.functional as F
 
-from ..nn.attn import AttentionEinOps, KVCache, KVCacheNaive
-from ..nn.attn2 import Attention, create_block_mask, create_block_causal_mask_mod
+from ..nn.attn import Attention, create_block_mask, create_block_causal_mask_mod, KVCache, KVCacheNaive
 from ..nn.patch import Patch, UnPatch
 from ..nn.geglu import GEGLU
 from ..nn.pe import NumericEncoding, RoPE, LearnRoPE, VidRoPE
+from ..nn.norm import RMSNorm
 from jaxtyping import Float, Bool, Int
 from torch import Tensor
 from typing import Optional, Literal
@@ -31,15 +31,15 @@ def gate(x, gate):
     return x
 
 class CausalBlock(nn.Module):
-    def __init__(self, layer_idx, d_model, expansion, n_heads, rope=None, ln_first = False, use_flex=False):
+    def __init__(self, layer_idx, d_model, expansion, n_heads, rope=None, use_flex=False):
         super().__init__()
         self.layer_idx = layer_idx
         self.d_model = d_model
         self.expansion = expansion
         self.n_heads = n_heads
-        self.norm1 = nn.RMSNorm(d_model)
+        self.norm1 = RMSNorm(d_model)
         self.selfattn = Attention(d_model, n_heads, rope=rope, use_flex=use_flex)
-        self.norm2 = nn.RMSNorm(d_model)
+        self.norm2 = RMSNorm(d_model)
         self.geglu = GEGLU(d_model, expansion*d_model, d_model)
         
         self.modulation = nn.Sequential(
@@ -80,7 +80,6 @@ class CausalDit(nn.Module):
                        rope_C=10000,
                        rope_tmax=None,
                        rope_type: Literal["rope", "learn", "vid"] = "rope",
-                       ln_first: bool = False,
                        use_flex: bool = False):
         super().__init__()
         self.height = height
@@ -128,9 +127,9 @@ class CausalDit(nn.Module):
         self.grid_pe = None
         self.rope_tmax = rope_tmax
 
-        self.blocks = nn.ModuleList([CausalBlock(lidx, d_model, expansion, n_heads, rope=self.rope_seq, ln_first=ln_first, use_flex=use_flex) for lidx in range(n_blocks)])
+        self.blocks = nn.ModuleList([CausalBlock(lidx, d_model, expansion, n_heads, rope=self.rope_seq, use_flex=use_flex) for lidx in range(n_blocks)])
         self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
-        self.norm = nn.RMSNorm(d_model)
+        self.norm = RMSNorm(d_model)
         self.unpatch = UnPatch(height, width, in_channels=d_model, out_channels=in_channels, patch_size=patch_size)
         self.action_emb = nn.Embedding(n_actions, d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
@@ -231,7 +230,6 @@ def get_model(height, width,
               in_channels=3, 
               C=10000, 
               rope_type: Literal["rope", "learn", "vid"] = "rope",
-              ln_first=False,
               use_flex=False):
     return CausalDit(height, width, 
                      n_window, 
@@ -244,7 +242,6 @@ def get_model(height, width,
                      bidirectional=bidirectional, 
                      rope_C=C, 
                      rope_type=rope_type,
-                     ln_first=ln_first,
                      use_flex=use_flex)
 
 if __name__ == "__main__":

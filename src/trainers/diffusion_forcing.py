@@ -1,6 +1,5 @@
 import torch as t
 import torch.nn.functional as F
-from tqdm import tqdm
 import wandb
 from tqdm import tqdm
 from functools import partial
