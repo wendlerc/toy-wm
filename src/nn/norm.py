@@ -21,8 +21,7 @@ class RMSNorm(nn.Module):
     def __init__(self, d):
         super().__init__()
         self.w = nn.Parameter(t.ones(d))
-        self.b = nn.Parameter(t.zeros(d))
 
     def forward(self, x: Float[Tensor, "batch dur seq d_model"]) -> Float[Tensor, "batch dur seq d_model"]:
-        normalized = x / (((x**2).mean(dim=-1, keepdim=True)).sqrt()+1e-6)
-        return normalized * self.w + self.b
+        normalized = x / (((x**2).mean(dim=-1, keepdim=True) + 1e-6).sqrt())
+        return normalized * self.w

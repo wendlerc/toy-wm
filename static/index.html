@@ -44,6 +44,10 @@
           Steps: <input type="number" id="stepsInput" value="6" min="1" max="10" step="1" style="width: 60px; padding: 4px; margin-left: 8px;" />
           <span style="color: #aaa; font-size: 12px; margin-left: 8px;">diffusion steps</span>
         </label>
+        <label style="display: block; margin-bottom: 8px;">
+          CFG: <input type="number" id="cfgInput" value="0.0" min="0" max="10" step="0.1" style="width: 60px; padding: 4px; margin-left: 8px;" />
+          <span style="color: #aaa; font-size: 12px; margin-left: 8px;">classifier-free guidance scale</span>
+        </label>
       </div>
       <div>
         <button id="startBtn" disabled>Start Stream</button>
@@ -118,7 +122,8 @@
       startBtn.addEventListener('click', () => {
         const fps = parseInt(document.getElementById('fpsInput').value) || 12;
         const n_steps = parseInt(document.getElementById('stepsInput').value) || 1;
-        socket.emit('start_stream', { n_steps: n_steps, cfg: 0.0, fps: fps, clamp: true });
+        const cfg = parseFloat(document.getElementById('cfgInput').value) || 0.0;
+        socket.emit('start_stream', { n_steps: n_steps, cfg: cfg, fps: fps, clamp: true });
       });
       stopBtn.addEventListener('click', () => {
         socket.emit('stop_stream');

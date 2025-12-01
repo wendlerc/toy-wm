@@ -38,7 +38,7 @@ if project_root not in sys.path:
 
 from src.utils.checkpoint import load_model_from_config
 from src.trainers.diffusion_forcing import sample
-from src.datasets.pong1m import get_loader, fixed2frame
+from src.datasets.pong1m import fixed2frame as pred2frame
 from src.config import Config
 
 # --------------------------
@@ -62,7 +62,6 @@ socketio = SocketIO(
 # Globals
 # --------------------------
 model = None
-pred2frame = None
 device = None
 cache = None
 
@@ -164,7 +163,7 @@ def _broadcast_ready():
 # Model init (pure eager) & warmup
 # --------------------------
 def initialize_model(config_path):
-    global model, pred2frame, device, cache
+    global model, device, cache
     global noise_buf, action_buf, step_once, server_ready
 
     t_start = time.time()
@@ -183,7 +182,7 @@ def initialize_model(config_path):
     model.to(device)  # Move model to GPU before activating cache
     model.eval()
     
-    cache = model.create_cache(1)  # Cache will now be created on the same device as model
+    cache = model.create_cache(2)  # Cache will now be created on the same device as model
     
     # Configure dynamo to prevent recompilation from cache state changes
     # allow_unspec_int_on_nn_module prevents recompilation when cache pointer attributes
@@ -192,10 +191,6 @@ def initialize_model(config_path):
     t._dynamo.config.cache_size_limit = 128  # Increased to handle cache state changes
     
     model = t.compile(model)
-
-
-    _, pred2frame_ = get_loader(duration=1, fps=30)
-    globals()["pred2frame"] = pred2frame_
 
     H = W = 24
     noise_buf = t.empty((1, 1, 3, H, W), device=device)
@@ -250,7 +245,7 @@ def initialize_model(config_path):
     server_ready = True
     print(f"Model ready on {device}")
     _broadcast_ready()
-    return model, pred2frame
+    return model
 
 # --------------------------
 # Fixed-FPS streaming worker

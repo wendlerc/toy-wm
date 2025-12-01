@@ -17,14 +17,15 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=0, negative_actions=None, 
         if cache is not None:
             cached_k, cached_v = cache.get()
 
-        v_pred, k_new, v_new = v(z_prev.to(device), actions.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)            
-
-        if cfg > 0:
-            if negative_actions is not None:
-                v_neg, _, _ = v(z_prev.to(device), negative_actions.to(device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)
-            else:
-                v_neg, _, _ = v(z_prev.to(device), t.zeros_like(actions, dtype=t.long, device=device), t_cond.to(device), cached_k=cached_k, cached_v=cached_v)
-            v_pred = v_neg + cfg * (v_pred - v_neg)
+        if negative_actions is None:
+            negative_actions = t.zeros_like(actions, dtype=t.long, device=device)
+        
+        actions_batch = t.cat([actions, negative_actions], dim=0)
+        z_batch = z_prev.repeat(2, 1, 1, 1, 1)
+        t_batch = t_cond.repeat(2, 1)
+        v_pred, k_new, v_new = v(z_batch, actions_batch, t_batch, cached_k=cached_k, cached_v=cached_v)            
+        v_pred, v_neg = v_pred.chunk(2, dim=0)
+        v_pred = v_neg + cfg * (v_pred - v_neg)
         z_prev = z_prev + (ts[i] - ts[i+1])*v_pred 
 
     if cache is not None:
@@ -38,7 +39,7 @@ def sample_video(model, actions, n_steps=4, cfg=0, negative_actions=None, clamp=
     if cache is not None:
         cache.reset()
     else:
-        cache = model.create_cache(batch_size)
+        cache = model.create_cache(2*batch_size)
     frames = t.randn(batch_size, num_actions, 3, 24, 24, device="cpu", dtype=model.dtype)
     for aidx in range(num_actions):
         noise=t.randn(batch_size, 1, 3, 24, 24, device=model.device, dtype=model.dtype)
