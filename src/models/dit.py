@@ -53,13 +53,11 @@ class CausalBlock(nn.Module):
         mu1, sigma1, c1, mu2, sigma2, c2 = self.modulation(cond).chunk(6, dim=-1)
         residual = z
         z = modulate(self.norm1(z), mu1, sigma1)
-        #z = z.to(dtype=self.dtype)
         z, k_new, v_new = self.selfattn(z, mask=mask_self, k_cache=cached_k, v_cache=cached_v)            
         z = residual + gate(z, c1)
 
         residual = z
         z = modulate(self.norm2(z), mu2, sigma2)
-        #z = z.to(dtype=self.dtype)
         z = self.geglu(z)
         z = residual + gate(z, c2)
         return z, k_new, v_new
