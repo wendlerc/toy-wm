@@ -13,7 +13,7 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 
 # Training
 
-You can train your own pong simulator using (should take <= 30 minutes on a A6000):
+You can train your own pong simulator using (should take less than an hour on a single A6000):
 
 `uv run python -m src.main`
 
