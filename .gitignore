@@ -1,4 +1,5 @@
 # Byte-compiled / optimized / DLL files
+play_pong_demo.py
 contents/
 data/
 wandb/

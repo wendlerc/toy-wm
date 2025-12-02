@@ -12,7 +12,7 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/robust-lake-779"  
+  checkpoint: "experiments/lucky-sun-781"  
   rope_type: "rope"
   use_flex: true
 
