@@ -4,7 +4,7 @@ A toy implementation of a diffusion transformer based "world model" trained on 9
 
 The only optimization this codebase really uses so far is `flexattention` but even without it you can train a pong simulator within a reasonable budget.
 
-The folder structure and repo are hopefully self explanatory. If you have any questions please don't hesitate to create an issue.
+The folder structure and repo are hopefully self explanatory. If you have any questions or find bugs or problems with the environment setup please don't hesitate to create an issue.
 
 # Setup
 
