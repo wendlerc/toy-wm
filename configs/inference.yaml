@@ -12,7 +12,7 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/lucky-sun-781"  
+  checkpoint: "experiments/pong/model.pt"  
   rope_type: "rope"
   use_flex: true
 
