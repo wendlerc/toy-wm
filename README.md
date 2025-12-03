@@ -10,22 +10,20 @@ The only optimization this codebase really uses so far is `flexattention` but ev
 
 The folder structure and repo are hopefully self explanatory. If you have any questions or find bugs or problems with the environment setup please don't hesitate to create an issue.
 
-
 # Setup
 
-1. install dependencies using `uv sync`
-2. download pong dataset `uv run scripts/download_dataset.py`
-
-# Training
-
-You can train your own pong simulator using (should take less than an hour on a single A6000):
-
-`uv run python -m src.main`
-
+- install dependencies using `uv sync`
 
 # Inference / running the demo
 
-Update `configs/inference.yaml` to use the checkpoint you want to run. By default, the checkpoints will be in `./experiments/wandb-run-name`. If you want to play with your model while it is training you can put the run folder into the checkpoint field. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
+- download model `uv run scripts/download_model.py`
+- start pong server `uv run play_pong.py`
+
+# Training
+
+- download pong dataset `uv run scripts/download_dataset.py`
+- you can train your own pong simulator using (should take <= 30 minutes on a A6000): `uv run python -m src.main`
+- to use it update `configs/inference.yaml`. By default, the checkpoints will be in `./experiments/wandb-run-name`. If you want to play with your model while it is training you can put the run folder into the checkpoint field. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
 
 # Resources
 
