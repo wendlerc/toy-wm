@@ -2,9 +2,14 @@
 
 A toy implementation of a diffusion transformer based "world model" trained on 9 hours of pong. Shoutout [@pufferlib](https://github.com/PufferAI/PufferLib/blob/3.0/pufferlib/ocean/pong/pong.h) for their great pong environment that was used for dataset creation.
 
+**Training dashboard.**
+0: unconditional, 1:don't move, 2:up, 3:down (for cyan)
+![dashboard](static/dashboard.webp)
+
 The only optimization this codebase really uses so far is `flexattention` but even without it you can train a pong simulator within a reasonable budget.
 
 The folder structure and repo are hopefully self explanatory. If you have any questions or find bugs or problems with the environment setup please don't hesitate to create an issue.
+
 
 # Setup
 
@@ -13,7 +18,7 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 
 # Training
 
-You can train your own pong simulator using (should take <= 30 minutes on a A6000):
+You can train your own pong simulator using (should take less than an hour on a single A6000):
 
 `uv run python -m src.main`
 
