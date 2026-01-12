@@ -78,7 +78,8 @@ class CausalDit(nn.Module):
                        rope_C=10000,
                        rope_tmax=None,
                        rope_type: Literal["rope", "learn", "vid"] = "rope",
-                       use_flex: bool = False):
+                       use_flex: bool = False,
+                       return_registers: bool = False):
         super().__init__()
         self.height = height
         self.width = width
@@ -96,6 +97,7 @@ class CausalDit(nn.Module):
         self.toks_per_frame = (height//patch_size)*(width//patch_size) + n_registers
         self.rope_C = rope_C
         self.use_flex = use_flex
+        self.return_registers = return_registers
         if rope_tmax is None:
             rope_tmax = self.n_window*self.toks_per_frame
         if rope_type == "rope":
@@ -162,8 +164,12 @@ class CausalDit(nn.Module):
                 cached_v: Optional[Float[Tensor, "layer batch dur seq d"]] = None):
         if ts.shape[1] == 1:
             ts = ts.repeat(1, z.shape[1])
-
-        a = self.action_emb(actions) # batch dur d
+        if actions.shape[-1] == self.d_model:
+            # for simplicity we currently assume that d_action == d_model
+            # when doing genie training we actually pass action vectors
+            a = actions
+        else:
+            a = self.action_emb(actions) # batch dur d
         ts_scaled = (ts.float() * (self.T - 1)).long()
         cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
         z = self.patch(z) # batch dur seq d
@@ -194,8 +200,10 @@ class CausalDit(nn.Module):
 
         mu, sigma = self.modulation(cond).chunk(2, dim=-1)
         zr = modulate(self.norm(zr), mu, sigma)
-        zr = zr.reshape(batch, durzr, seqzr, d)
-        out = self.unpatch(zr[:, :, :-self.n_registers])
+        zr = zr.reshape(batch, durzr, seqzr, d) 
+        out = self.unpatch(zr[:, :, :-self.n_registers]) # here we could also return the registers in addition and use them as actions in a GenIE-like setting
+        if self.return_registers:
+            return out, zr[:, :, -self.n_registers:], k_update, v_update # TODO: cont. from here
         return out, k_update, v_update
     
     def causal_mask(self):

@@ -45,10 +45,20 @@ class WANDBConfig:
     run_name : str = None 
 
 @dataclass
+class ActionModelConfig:
+    model_id : str = "action_dit"
+    n_actions : int = 6
+    d_actions : int = 64
+    beta : float = 0.25
+    action_dropout : float = 0.0
+    checkpoint : str = None
+
+@dataclass
 class Config:
     model: TransformerConfig
     train: TrainingConfig
     wandb: WANDBConfig
+    action_model: Optional[ActionModelConfig] = None
 
     @classmethod
     def from_yaml(cls, path):
