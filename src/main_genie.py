@@ -56,8 +56,8 @@ if __name__ == "__main__":
         except AttributeError:
             print("torch.compile is not available in this version of PyTorch; running without compilation.")
 
-    wandb.watch(model, log="all", log_freq=100)  # log_freq reduces logging overhead, log="all" avoids gradient tracking issues
-    wandb.watch(action_model, log="all", log_freq=100)
+    # Note: wandb.watch disabled for genie training - action_model has unused params
+    # (action embeddings in inner DiT) that cause None gradient errors with watch hooks
     checkpoint_manager = CheckpointManager(save_dir, k=5, mode="min", metric_name="loss")
     action_dropout = ctrain.action_dropout if "action_dropout" in ctrain else 0.2
     model = train(model, action_model, loader, pred2frame=pred2frame,
