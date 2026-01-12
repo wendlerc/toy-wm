@@ -15,7 +15,7 @@ def train(model, action_model,
           lr1=0.02, lr2=3e-4, betas=(0.9, 0.95), weight_decay=0.01, 
           max_steps=1000, 
           warmup_steps=100,
-          eval_each_n_steps = 500,
+          eval_each_n_steps = 100,
           clipping=True,
           action_dropout=0.2,
           checkpoint_manager=None,
@@ -66,8 +66,14 @@ def train(model, action_model,
         log_dict["loss_vq"] = loss_vq.item()
         log_dict["loss"] = loss.item()
         log_dict["lr"] = scheduler.get_last_lr()[0]
-        log_dict["action_hist"] = wandb.Histogram(labels_pred.detach().cpu().numpy().flatten())
         if step % eval_each_n_steps == 0 and pred2frame is not None:
+            # Log action histogram during eval (less frequently)
+            n_actions = action_model.learnt_actions.D.shape[0]
+            log_dict["action_hist"] = wandb.Histogram(
+                labels_pred.detach().cpu().numpy().flatten(),
+                num_bins=n_actions
+            )
+            print(labels_pred[0])
             checkpoint_manager.save(metric=loss.item(), 
                                     step=step, 
                                     model=model, 
