@@ -203,7 +203,7 @@ class CausalDit(nn.Module):
         zr = zr.reshape(batch, durzr, seqzr, d) 
         out = self.unpatch(zr[:, :, :-self.n_registers]) # here we could also return the registers in addition and use them as actions in a GenIE-like setting
         if self.return_registers:
-            return out, zr[:, :, -self.n_registers:], k_update, v_update # TODO: cont. from here
+            return out, zr[:,:,-self.n_registers:], k_update, v_update # TODO: cont. from here
         return out, k_update, v_update
     
     def causal_mask(self):

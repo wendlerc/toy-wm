@@ -18,10 +18,10 @@ model:
 
 action_model:
   model_id: "action_dit"
-  n_actions: 10
+  n_actions: 10000
   d_actions: 320  # should match d_model
-  beta: 0.01
-  action_dropout: 0.05
+  beta: 0.1
+  action_dropout: 0.0
   n_window: 21
   checkpoint: null
 
@@ -42,6 +42,6 @@ train:
 
 wandb:
   name: null
-  project: "toy-genie"
+  project: "toy-genie-inspired"
   run_name: "genie-inspired"
 

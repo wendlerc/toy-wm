@@ -6,6 +6,8 @@ from torch import Tensor
 from typing import Optional, Literal
 
 from .dit import CausalDit
+from vector_quantize_pytorch import VectorQuantize
+
 
 class Codebook(nn.Module):
   def __init__(self, n, d, beta=0.25, dropout_p=0.0):
@@ -46,7 +48,16 @@ class ActionDit(nn.Module):
                              return_registers=True)
 
         self.action_head = nn.Linear(d_model, d_actions)
-        self.learnt_actions = Codebook(n_actions, d_actions, beta=beta, dropout_p=action_dropout)
+        #self.learnt_actions = Codebook(n_actions, d_actions, beta=beta, dropout_p=action_dropout)
+        self.learnt_actions = VectorQuantize(
+            dim = d_actions,
+            codebook_size = n_actions,     # codebook size
+            codebook_dim = 16,
+            decay = 0.8,             # the exponential moving average decay, lower means the dictionary will change faster
+            commitment_weight = beta,  # the weight on the commitment loss
+            use_cosine_sim = True
+        )
+        self.first = True
 
     def forward(self, z: Float[Tensor, "batch dur channels height width"]):
         actions = t.zeros(z.shape[0], z.shape[1], device=z.device, dtype=t.int64)
@@ -61,7 +72,13 @@ class ActionDit(nn.Module):
         actions_disc, labels, loss = self.learnt_actions(actions_flat)
         actions_dict = actions_disc.reshape(b, dur, d)
         labels = labels.reshape(b, dur)
-        return actions_dict, labels, loss
+        if self.first:
+          print(f'registers {registers.shape}')
+          print(f'representations {actions_dict.shape}')
+          print(f'labels {labels.shape}')
+          print(f'loss {loss.shape}')
+          self.first = False
+        return actions_dict, actions_cont[:,:,0], labels, loss
 
 
 def get_model(height, width, 

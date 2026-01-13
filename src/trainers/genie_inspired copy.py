@@ -1,6 +1,5 @@
 import torch as t
 import torch.nn.functional as F
-import torch.nn as nn
 import wandb
 from tqdm import tqdm
 from functools import partial
@@ -23,55 +22,40 @@ def train(model, action_model,
           device="cuda", 
           dtype=t.float32):
 
-    tmp_head = nn.Linear(320, 4)
-    tmp_head.to(device).to(dtype)
     optimizer = get_muon(model, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay), action_model=action_model)
     scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, partial(lr_lambda, max_steps=max_steps, warmup_steps=warmup_steps))
 
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
-    first = True
     for step in pbar:
         model.train()
         log_dict = {}
         optimizer.zero_grad()
         try:
-            frames, gt_actions = next(iterator)
+            frames, _ = next(iterator)
         except StopIteration:
             iterator = iter(dataloader)
-            frames, gt_actions = next(iterator)
+            frames, _ = next(iterator)
             
         frames = frames.to(device).to(dtype)
-        
+
         with t.autocast(device_type=device, dtype=dtype):
             # assuming true frame action sequence
             # (f_1, a_1), (f_2, a_2), ..., (f_dur, a_dur)
             # _, a_1, a_2, a_3, ..., a_{dur-1} \approx action_model(f_1, ..., f_dur)
             # note that the output for the first frame cannot contain the relevant information
-            actions_pred, actions_cont, labels_pred, loss_vq = action_model(frames)
-            pred_gt_actions = tmp_head(actions_pred[:, 1:])
-            gt_actions = gt_actions[:, :-1] 
-            ce_loss = F.cross_entropy(pred_gt_actions.reshape(-1, 4), gt_actions.reshape(-1).to(t.long).to(device))
-            loss = loss_vq + ce_loss
-            log_dict["ce_loss"] = ce_loss.item()
+            actions_pred, labels_pred, loss_vq = action_model(frames)
             # print(f'actions_pred.shape {actions_pred.shape}')
-            actions = actions_pred[:, 1:] # actually the way things line up in the mmdit we don't need to omit the first one
+            actions = actions_pred[:, 1:]
             ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
-            x0 = frames[:,1:]
-            z = t.randn_like(x0, device=device, dtype=dtype)
-            if first:
-                print('z.shape', z.shape)
-                first = False
-            z = frames[:,:-1]
-            pred, _, _ = model(z, actions, 0*ts)
-            loss_rf = F.mse_loss(pred.double(), x0.double(), reduction="mean")
-            if False:
-                vel_true = x0 - z
-                x_t = x0 - ts[:, :, None, None, None] * vel_true
-                vel_pred, _, _ = model(x_t, actions_pred[:, 1:], ts)
-                loss_rf = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
-            #loss += loss_rf
-            
+            z = t.randn_like(frames[:,:-1], device=device, dtype=dtype)
+            x0 = frames[:,:-1]
+            vel_true = x0 - z
+            x_t = x0 - ts[:, :, None, None, None] * vel_true
+            vel_pred, _, _ = model(x_t, actions_pred[:, 1:], ts)
+            loss_rf = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
+            loss = loss_rf + loss_vq
+        
         loss.backward()
         if clipping:
             t.nn.utils.clip_grad_norm_(action_model.parameters(), 10.0)
@@ -85,8 +69,8 @@ def train(model, action_model,
         log_dict["lr"] = scheduler.get_last_lr()[0]
         if step % eval_each_n_steps == 0 and pred2frame is not None:
             # Log action histogram during eval (less frequently)
-            #log_dict["codebook_grad_mean"] = action_model.learnt_actions.D.grad.mean().item()
-            #log_dict["codebook_grad_std"] = action_model.learnt_actions.D.grad.std().item()
+            log_dict["codebook_grad_mean"] = action_model.learnt_actions.D.grad.mean().item()
+            log_dict["codebook_grad_std"] = action_model.learnt_actions.D.grad.std().item()
             log_dict["action_hist"] = labels_pred.detach().cpu().numpy()
             print("predicted action shapes", labels_pred.shape)
             print("predicted action labels", labels_pred)
@@ -97,6 +81,18 @@ def train(model, action_model,
                                     optimizer=optimizer, 
                                     scheduler=scheduler)
             model.eval()
+
+            if frames.shape[1] == 1: 
+                with t.autocast(device_type=device, dtype=dtype):
+                    z_sampled = sample(model, 
+                                    t.randn_like(frames[:30], device=device, dtype=dtype), 
+                                    actions[:30], num_steps=10)
+                    z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
+            else:
+                with t.autocast(device_type=device, dtype=dtype):
+                    z_sampled = sample(model, t.randn_like(frames[:1, :-1], device=device, dtype=dtype), actions[:1], num_steps=10)
+            frames_sampled = pred2frame(z_sampled)
+            log_dict["sample"] = log_video(frames_sampled, fps=30)
         wandb.log(log_dict)
 
     return model

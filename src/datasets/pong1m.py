@@ -14,6 +14,7 @@ def get_loader(batch_size=64, fps=30, duration=5, shuffle=True, debug=False, dro
     actions = t.from_numpy(np.load("./datasets/pong1M/actions.npy"))
     height, width, channels = frames.shape[-3:]
     frames_per_example = fps*duration + 1
+    #frames = t.cat([frames[::3], frames[1::3], frames[2::3]], dim=0) 
     n = frames.shape[0]//frames_per_example
     frames = frames[:n*frames_per_example]
     frames = frames.reshape(n, frames_per_example, height, width, channels)
