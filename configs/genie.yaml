@@ -18,9 +18,9 @@ model:
 
 action_model:
   model_id: "action_dit"
-  n_actions: 6
+  n_actions: 10
   d_actions: 320  # should match d_model
-  beta: 0.25
+  beta: 0.05
   action_dropout: 0.0
   n_window: 21
   checkpoint: null

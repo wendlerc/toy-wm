@@ -45,6 +45,7 @@ def train(model, action_model,
             # _, a_1, a_2, a_3, ..., a_{dur-1} \approx action_model(f_1, ..., f_dur)
             # note that the output for the first frame cannot contain the relevant information
             actions_pred, labels_pred, loss_vq = action_model(frames)
+            # print(f'actions_pred.shape {actions_pred.shape}')
             actions = actions_pred[:, 1:]
             ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
             z = t.randn_like(frames[:,:-1], device=device, dtype=dtype)
@@ -68,12 +69,10 @@ def train(model, action_model,
         log_dict["lr"] = scheduler.get_last_lr()[0]
         if step % eval_each_n_steps == 0 and pred2frame is not None:
             # Log action histogram during eval (less frequently)
-            n_actions = action_model.learnt_actions.D.shape[0]
-            log_dict["action_hist"] = wandb.Histogram(
-                labels_pred.detach().cpu().numpy().flatten(),
-                num_bins=n_actions
-            )
-            print(labels_pred[0])
+
+            log_dict["action_hist"] = labels_pred.detach().cpu().numpy()
+            print("predicted action shapes", labels_pred.shape)
+            print("predicted action labels", labels_pred)
             checkpoint_manager.save(metric=loss.item(), 
                                     step=step, 
                                     model=model, 

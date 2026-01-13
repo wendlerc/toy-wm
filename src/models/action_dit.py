@@ -60,6 +60,7 @@ class ActionDit(nn.Module):
         actions_flat = actions_cont.reshape(-1, d)
         actions_disc, labels, loss = self.learnt_actions(actions_flat)
         actions_dict = actions_disc.reshape(b, dur, d)
+        labels = labels.reshape(b, dur)
         return actions_dict, labels, loss
 
 
