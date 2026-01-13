@@ -69,7 +69,8 @@ def train(model, action_model,
         log_dict["lr"] = scheduler.get_last_lr()[0]
         if step % eval_each_n_steps == 0 and pred2frame is not None:
             # Log action histogram during eval (less frequently)
-
+            log_dict["codebook_grad_mean"] = action_model.learnt_actions.grad.mean().item()
+            log_dict["codebook_grad_std"] = action_model.learnt_actions.grad.std().item()
             log_dict["action_hist"] = labels_pred.detach().cpu().numpy()
             print("predicted action shapes", labels_pred.shape)
             print("predicted action labels", labels_pred)
