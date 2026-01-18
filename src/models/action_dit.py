@@ -79,10 +79,6 @@ class ActionDit(nn.Module):
         actions_dict = actions_disc.reshape(b, dur, d)
         labels = labels.reshape(b, dur)
         if self.first:
-          print(f'registers {registers.shape}')
-          print(f'representations {actions_dict.shape}')
-          print(f'labels {labels.shape}')
-          print(f'loss {loss.shape}')
           self.first = False
         return actions_dict, actions_cont[:,:,0], labels, loss
 
