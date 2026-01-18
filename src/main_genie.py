@@ -68,5 +68,5 @@ if __name__ == "__main__":
 
     # Save models
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))
-    t.save(action_model.state_dict(), os.path.join(save_dir, "action_model.pt"))
+    t.save(action_model.state_dict(), os.path.join(save_dir, "action_model.pt"))    
     print(f"Models saved to {save_dir}")

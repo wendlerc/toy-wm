@@ -94,8 +94,6 @@ def train(model, action_model,
             #log_dict["codebook_grad_mean"] = action_model.learnt_actions.D.grad.mean().item()
             #log_dict["codebook_grad_std"] = action_model.learnt_actions.D.grad.std().item()
             log_dict["action_hist"] = labels_pred.detach().cpu().numpy()
-            print("predicted action shapes", labels_pred.shape)
-            print("predicted action labels", labels_pred)
             checkpoint_manager.save(metric=loss.item(), 
                                     step=step, 
                                     model=model, 
@@ -104,9 +102,16 @@ def train(model, action_model,
                                     scheduler=scheduler)
             model.eval()
             # overwrite action embeddings with the ones from the codebook
-            #with t.no_grad():
-            #    codebook = action_model.learnt_actions
-            #    model.action_emb.weight.copy_((codebook.project_out.weight.data @ codebook.codebook.T).T)
+            with t.no_grad():
+                codebook = action_model.learnt_actions
+                model.action_emb.weight.copy_(codebook.project_out(codebook.codebook))
+                labels_match = labels_pred.to(t.long)
+                embed_rows = model.action_emb(labels_match)
+                actions_match = actions_pred
+                cos_sim = F.cosine_similarity(actions_match, embed_rows, dim=-1)
+                log_dict["action_embed_cosine_mean"] = cos_sim.mean().item()
+                log_dict["action_embed_cosine_std"] = cos_sim.std().item()
+                log_dict["action_embed_mse"] = F.mse_loss(actions_match, embed_rows).item()
             # call basic control dynamic with the 10 most common actions using bincount
             labels_np = labels_pred.detach().cpu().numpy().astype(np.int64)
             most_common_actions = np.bincount(labels_np.ravel()).argsort()[-10:][::-1]
