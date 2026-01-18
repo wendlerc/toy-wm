@@ -55,9 +55,15 @@ class ActionDit(nn.Module):
             codebook_dim = 16,
             decay = 0.8,             # the exponential moving average decay, lower means the dictionary will change faster
             commitment_weight = beta,  # the weight on the commitment loss
-            use_cosine_sim = True
+            use_cosine_sim = True,
+            threshold_ema_dead_code = 2,
         )
         self.first = True
+
+    @t._dynamo.disable
+    def _quantize_actions(self, actions_flat):
+        # VectorQuantize uses view-heavy ops that can break Inductor when threshold_ema_dead_code is set.
+        return self.learnt_actions(actions_flat)
 
     def forward(self, z: Float[Tensor, "batch dur channels height width"]):
         actions = t.zeros(z.shape[0], z.shape[1], device=z.device, dtype=t.int64)
@@ -69,7 +75,7 @@ class ActionDit(nn.Module):
         actions_cont = self.action_head(registers)
         b, dur, _, d = actions_cont.shape
         actions_flat = actions_cont.reshape(-1, d)
-        actions_disc, labels, loss = self.learnt_actions(actions_flat)
+        actions_disc, labels, loss = self._quantize_actions(actions_flat)
         actions_dict = actions_disc.reshape(b, dur, d)
         labels = labels.reshape(b, dur)
         if self.first:

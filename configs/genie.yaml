@@ -18,7 +18,7 @@ model:
 
 action_model:
   model_id: "action_dit"
-  n_actions: 10000
+  n_actions: 20
   d_actions: 320  # should match d_model
   beta: 0.1
   action_dropout: 0.0

@@ -51,9 +51,12 @@ def train(model, action_model,
             actions_pred, actions_cont, labels_pred, loss_vq = action_model(frames)
             pred_gt_actions = tmp_head(actions_pred[:, 1:])
             gt_actions = gt_actions[:, :-1] 
-            ce_loss = F.cross_entropy(pred_gt_actions.reshape(-1, 4), gt_actions.reshape(-1).to(t.long).to(device))
-            loss = loss_vq + ce_loss
-            log_dict["ce_loss"] = ce_loss.item()
+            #ce_loss = F.cross_entropy(pred_gt_actions.reshape(-1, 4), gt_actions.reshape(-1).to(t.long).to(device))
+            loss = loss_vq #+ ce_loss
+            # lets also compute accuracy
+            #accuracy = (pred_gt_actions.reshape(-1, 4).argmax(dim=1) == gt_actions.reshape(-1).to(t.long).to(device)).float().mean()
+            #log_dict["accuracy"] = accuracy.item()
+            #log_dict["ce_loss"] = ce_loss.item()
             # print(f'actions_pred.shape {actions_pred.shape}')
             actions = actions_pred[:, 1:] # actually the way things line up in the mmdit we don't need to omit the first one
             ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
@@ -70,7 +73,7 @@ def train(model, action_model,
                 x_t = x0 - ts[:, :, None, None, None] * vel_true
                 vel_pred, _, _ = model(x_t, actions_pred[:, 1:], ts)
                 loss_rf = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
-            #loss += loss_rf
+            loss += loss_rf
             
         loss.backward()
         if clipping:
