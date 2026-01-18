@@ -2,11 +2,12 @@ import torch as t
 import torch.nn.functional as F
 import torch.nn as nn
 import wandb
+import numpy as np
 from tqdm import tqdm
 from functools import partial
 
 from ..inference.sampling import sample
-from ..eval import basic_control
+from ..eval import basic_control_dynamic
 from ..utils import log_video, get_muon, lr_lambda
 
 
@@ -58,20 +59,22 @@ def train(model, action_model,
             #log_dict["accuracy"] = accuracy.item()
             #log_dict["ce_loss"] = ce_loss.item()
             # print(f'actions_pred.shape {actions_pred.shape}')
-            actions = actions_pred[:, 1:] # actually the way things line up in the mmdit we don't need to omit the first one
-            ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
-            x0 = frames[:,1:]
-            z = t.randn_like(x0, device=device, dtype=dtype)
-            if first:
-                print('z.shape', z.shape)
-                first = False
-            z = frames[:,:-1]
-            pred, _, _ = model(z, actions, 0*ts)
-            loss_rf = F.mse_loss(pred.double(), x0.double(), reduction="mean")
             if False:
+                actions = actions_pred[:, 1:] # actually the way things line up in the mmdit we don't need to omit the first one
+                ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
+                x0 = frames[:,1:]
+                z = frames[:,:-1]
+                pred, _, _ = model(z, actions, 0*ts)
+                loss_rf = F.mse_loss(pred.double(), x0.double(), reduction="mean")
+            if True:
+                actions = actions_pred
+                ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
+                x0 = frames
+                z = t.randn_like(x0, device=device, dtype=dtype)
                 vel_true = x0 - z
                 x_t = x0 - ts[:, :, None, None, None] * vel_true
-                vel_pred, _, _ = model(x_t, actions_pred[:, 1:], ts)
+                # because action_pred is offset by 1, each frame gets the action of the previous frame as an input in this way
+                vel_pred, _, _ = model(x_t, actions_pred, ts)
                 loss_rf = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
             loss += loss_rf
             
@@ -100,6 +103,15 @@ def train(model, action_model,
                                     optimizer=optimizer, 
                                     scheduler=scheduler)
             model.eval()
+            # overwrite action embeddings with the ones from the codebook
+            #with t.no_grad():
+            #    codebook = action_model.learnt_actions
+            #    model.action_emb.weight.copy_((codebook.project_out.weight.data @ codebook.codebook.T).T)
+            # call basic control dynamic with the 10 most common actions using bincount
+            labels_np = labels_pred.detach().cpu().numpy().astype(np.int64)
+            most_common_actions = np.bincount(labels_np.ravel()).argsort()[-10:][::-1]
+            frames_control = basic_control_dynamic(model, most_common_actions.tolist())
+            log_dict["control_most_common"] = log_video(frames_control, fps=30)
         wandb.log(log_dict)
 
     return model

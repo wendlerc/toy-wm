@@ -226,6 +226,7 @@ class CausalDit(nn.Module):
 
 
 def get_model(height, width, 
+              n_actions=4,
               n_window=5, 
               d_model=64, 
               T=100, 
@@ -241,6 +242,7 @@ def get_model(height, width,
                      n_window, 
                      d_model, 
                      T, 
+                     n_actions=n_actions,
                      in_channels=in_channels, 
                      n_blocks=n_blocks, 
                      patch_size=patch_size, 

@@ -1,10 +1,11 @@
 model:
   model_id: "dit"
+  n_actions: 20
   width: 24
   height: 24
   T: 1000
   in_channels: 3
-  n_window: 20
+  n_window: 21
   patch_size: 3
   n_heads: 20
   d_model: 320
@@ -12,9 +13,9 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
+  use_flex: true
   checkpoint: null
   rope_type: "rope"
-  use_flex: true
 
 action_model:
   model_id: "action_dit"

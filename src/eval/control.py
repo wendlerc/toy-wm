@@ -47,4 +47,16 @@ def basic_control(model, n_steps=6):
     pred = sample_video(model, actions, n_steps=n_steps)
     frames = fixed2frame(pred)  
     return annotate_frames(frames, actions)
-    
+
+
+def basic_control_dynamic(model, actions, n_frames_per_action=30, n_steps=6):
+    """
+      actions is a list of action indices.
+    """
+    all_actions = []
+    for action in actions:
+        all_actions.extend(n_frames_per_action*[action])
+    all_actions = t.tensor(all_actions, dtype=t.int32, device=model.device).unsqueeze(0)
+    pred = sample_video(model, all_actions, n_steps=n_steps)
+    frames = fixed2frame(pred)  
+    return annotate_frames(frames, all_actions)

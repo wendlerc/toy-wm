@@ -33,8 +33,10 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
         raise ValueError(f"Invalid model type: {cmodel.model_id}")
     C = cmodel.C if "C" in cmodel else 5000
     use_flex = cmodel.use_flex if "use_flex" in cmodel else False
+    n_actions = cmodel.n_actions if "n_actions" in cmodel else 4
     model = get_model(
         cmodel.height, cmodel.width, 
+        n_actions=n_actions,
         n_window=cmodel.n_window, 
         patch_size=cmodel.patch_size, 
         n_heads=cmodel.n_heads, d_model=cmodel.d_model, 
