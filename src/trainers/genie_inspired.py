@@ -7,7 +7,7 @@ from tqdm import tqdm
 from functools import partial
 
 from ..inference.sampling import sample
-from ..eval import basic_control_dynamic
+from ..eval import basic_control_dynamic, run_actions
 from ..utils import log_video, get_muon, lr_lambda
 
 
@@ -104,7 +104,8 @@ def train(model, action_model,
             # overwrite action embeddings with the ones from the codebook
             with t.no_grad():
                 codebook = action_model.learnt_actions
-                model.action_emb.weight.copy_(codebook.project_out(codebook.codebook))
+                model.action_emb.weight.copy_(t.cat([action_model.unconditional_action.view(1, -1), codebook.project_out(codebook.codebook)], dim=0))
+                # do some sanity checks; note that because we are comparing action embeddings before and after a gradient step, differences are supposed to be small but not 0.
                 labels_match = labels_pred.to(t.long)
                 embed_rows = model.action_emb(labels_match)
                 actions_match = actions_pred
@@ -117,6 +118,10 @@ def train(model, action_model,
             most_common_actions = np.bincount(labels_np.ravel()).argsort()[-10:][::-1]
             frames_control = basic_control_dynamic(model, most_common_actions.tolist())
             log_dict["control_most_common"] = log_video(frames_control, fps=30)
+            frames_actions = run_actions(model, labels_pred[0].unsqueeze(0))
+            log_dict["control_actions"] = log_video(frames_actions, fps=30)
+            frames_uncond = run_actions(model, t.zeros_like(labels_pred[0]).unsqueeze(0))
+            log_dict["control_uncond"] = log_video(frames_uncond, fps=30)
         wandb.log(log_dict)
 
     return model

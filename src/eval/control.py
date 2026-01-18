@@ -30,7 +30,7 @@ def annotate_frames(frames, annotations):
             font_scale = 0.22
             thickness = 1
             org = (3, 6)
-            txt = f'{action_val}'
+            txt = f'{t_idx}: {action_val}'
             cv2.putText(
                 frame_for_label, txt, org,
                 cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, lineType=cv2.LINE_AA
@@ -60,3 +60,9 @@ def basic_control_dynamic(model, actions, n_frames_per_action=30, n_steps=6):
     pred = sample_video(model, all_actions, n_steps=n_steps)
     frames = fixed2frame(pred)  
     return annotate_frames(frames, all_actions)
+
+
+def run_actions(model, actions, n_steps=6):
+    pred = sample_video(model, actions, n_steps=n_steps)
+    frames = fixed2frame(pred)  
+    return annotate_frames(frames, actions)

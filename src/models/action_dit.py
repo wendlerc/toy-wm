@@ -1,3 +1,5 @@
+from diffusers.utils import dummy_nvidia_modelopt_objects
+from huggingface_hub.hub_mixin import DEFAULT_MODEL_CARD
 import torch as t
 from torch import nn
 import torch.nn.functional as F
@@ -10,6 +12,7 @@ from vector_quantize_pytorch import VectorQuantize
 
 
 class Codebook(nn.Module):
+  # currently deviates from VectorQuantize module because it does not include down and up projections.
   def __init__(self, n, d, beta=0.25, dropout_p=0.0):
     super().__init__()
     init = t.randn(n, d)
@@ -47,17 +50,17 @@ class ActionDit(nn.Module):
                              debug=debug, rope_C=rope_C, rope_tmax=rope_tmax, rope_type=rope_type, use_flex=use_flex,
                              return_registers=True)
 
-        self.action_head = nn.Linear(d_model, d_actions)
-        #self.learnt_actions = Codebook(n_actions, d_actions, beta=beta, dropout_p=action_dropout)
         self.learnt_actions = VectorQuantize(
-            dim = d_actions,
+            dim = d_model,
             codebook_size = n_actions,     # codebook size
-            codebook_dim = 16,
+            codebook_dim = d_actions,
             decay = 0.8,             # the exponential moving average decay, lower means the dictionary will change faster
             commitment_weight = beta,  # the weight on the commitment loss
             use_cosine_sim = True,
             threshold_ema_dead_code = 2,
         )
+        self.action_dropout = action_dropout
+        self.unconditional_action = nn.Parameter(t.randn(d_model)) # todo the naming of vars is confusing right now. d_action should be actually the thing that is 16. 
         self.first = True
 
     @t._dynamo.disable
@@ -72,22 +75,37 @@ class ActionDit(nn.Module):
         # TODO: create better abstractions, either by seperating DiT from rf-DiT or by reimplementing it here
         _, registers, _, _ = self.dit(z, actions, ts) 
         # batch x dur x 1 x d
-        actions_cont = self.action_head(registers)
+        actions_cont = registers
         b, dur, _, d = actions_cont.shape
         actions_flat = actions_cont.reshape(-1, d)
         actions_disc, labels, loss = self._quantize_actions(actions_flat)
-        actions_dict = actions_disc.reshape(b, dur, d)
-        labels = labels.reshape(b, dur)
+        actions_disc = actions_disc.reshape(b, dur, d)
+        # Offset all labels by 1
+        labels = labels.reshape(b, dur) + 1
+
         if self.first:
-          self.first = False
-        return actions_dict, actions_cont[:,:,0], labels, loss
+            self.first = False
+        # during training we should apply action dropout replacing them with the unconditional action
+        if self.training and self.action_dropout > 0.0:
+            # We drop actions with probability self.action_dropout
+            dropout_mask = t.rand(actions_disc.shape[:2], device=actions_disc.device) < self.action_dropout
+            # actions_disc shape: (b, dur, d)
+            # Replace dropped actions with unconditional action embedding (broadcast correctly)
+            uncond = self.unconditional_action.view(1, 1, -1)
+            # Use algebra to mask entries instead of clone & assignment
+            actions_disc = actions_disc * (~dropout_mask).unsqueeze(-1) + uncond * dropout_mask.unsqueeze(-1)
+            # Set dropped label indices to 0 for unconditional actions
+            labels = labels * (~dropout_mask)  # dropped ones go to 0
+        return actions_disc, actions_cont[:,:,0], labels, loss
 
 
 def get_model(height, width, 
               n_window= 5, 
               d_model= 64, 
+              action_dropout = 0.0,
               n_actions = 6,
               d_actions = 64,
+              beta = 0.25,
               T=100, 
               n_blocks=2, 
               patch_size=2, 
@@ -97,12 +115,13 @@ def get_model(height, width,
               C=10000, 
               rope_type: Literal["rope", "learn", "vid"] = "rope",
               use_flex=False):
-    assert d_model == d_actions, f"Currently, we only support {d_model} == {d_actions}."
     return ActionDit(height, width,
                      n_window, 
                      d_model, 
+                     action_dropout=action_dropout,
                      n_actions=n_actions,
                      d_actions=d_actions,
+                     beta=beta,
                      T=T, 
                      in_channels=in_channels, 
                      n_blocks=n_blocks, 

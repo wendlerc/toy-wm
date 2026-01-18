@@ -101,10 +101,12 @@ def load_action_model_from_config(config_path: str, checkpoint_path: str = None,
     # Build ActionDit using shared params from main model + action-specific params
     model = action_dit(
         cmodel.height, cmodel.width, 
+        action_dropout=caction.action_dropout,
         n_window=caction.n_window, 
         d_model=cmodel.d_model,
         n_actions=caction.n_actions,
         d_actions=caction.d_actions,
+        beta=caction.beta,
         T=cmodel.T, 
         n_blocks=cmodel.n_blocks, 
         patch_size=cmodel.patch_size, 

@@ -1,6 +1,6 @@
 model:
   model_id: "dit"
-  n_actions: 20
+  n_actions: 11
   width: 24
   height: 24
   T: 1000
@@ -19,10 +19,10 @@ model:
 
 action_model:
   model_id: "action_dit"
-  n_actions: 20
-  d_actions: 320  # should match d_model
+  n_actions: 10
+  d_actions: 16  
   beta: 0.1
-  action_dropout: 0.0
+  action_dropout: 0.2
   n_window: 21
   checkpoint: null
 
