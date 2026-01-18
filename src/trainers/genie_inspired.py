@@ -120,7 +120,7 @@ def train(model, action_model,
             log_dict["control_most_common"] = log_video(frames_control, fps=30)
             frames_actions = run_actions(model, labels_pred[0].unsqueeze(0))
             log_dict["control_actions"] = log_video(frames_actions, fps=30)
-            frames_uncond = run_actions(model, t.zeros_like(labels_pred[0]).unsqueeze(0))
+            frames_uncond = run_actions(model, t.zeros([1, 150], dtype=t.int32, device=device))
             log_dict["control_uncond"] = log_video(frames_uncond, fps=30)
         wandb.log(log_dict)
 

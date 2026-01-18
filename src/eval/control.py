@@ -30,7 +30,7 @@ def annotate_frames(frames, annotations):
             font_scale = 0.22
             thickness = 1
             org = (3, 6)
-            txt = f'{t_idx}: {action_val}'
+            txt = f'{t_idx//30}: {action_val}'
             cv2.putText(
                 frame_for_label, txt, org,
                 cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, lineType=cv2.LINE_AA
