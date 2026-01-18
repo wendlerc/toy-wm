@@ -19,19 +19,15 @@ def train(model, action_model,
           warmup_steps=100,
           eval_each_n_steps = 100,
           clipping=True,
-          action_dropout=0.2,
           checkpoint_manager=None,
           device="cuda", 
           dtype=t.float32):
 
-    tmp_head = nn.Linear(320, 4)
-    tmp_head.to(device).to(dtype)
     optimizer = get_muon(model, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay), action_model=action_model)
     scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, partial(lr_lambda, max_steps=max_steps, warmup_steps=warmup_steps))
 
     iterator = iter(dataloader)
     pbar = tqdm(range(max_steps))
-    first = True
     for step in pbar:
         model.train()
         log_dict = {}
@@ -50,32 +46,16 @@ def train(model, action_model,
             # _, a_1, a_2, a_3, ..., a_{dur-1} \approx action_model(f_1, ..., f_dur)
             # note that the output for the first frame cannot contain the relevant information
             actions_pred, actions_cont, labels_pred, loss_vq = action_model(frames)
-            pred_gt_actions = tmp_head(actions_pred[:, 1:])
-            gt_actions = gt_actions[:, :-1] 
-            #ce_loss = F.cross_entropy(pred_gt_actions.reshape(-1, 4), gt_actions.reshape(-1).to(t.long).to(device))
-            loss = loss_vq #+ ce_loss
-            # lets also compute accuracy
-            #accuracy = (pred_gt_actions.reshape(-1, 4).argmax(dim=1) == gt_actions.reshape(-1).to(t.long).to(device)).float().mean()
-            #log_dict["accuracy"] = accuracy.item()
-            #log_dict["ce_loss"] = ce_loss.item()
-            # print(f'actions_pred.shape {actions_pred.shape}')
-            if False:
-                actions = actions_pred[:, 1:] # actually the way things line up in the mmdit we don't need to omit the first one
-                ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
-                x0 = frames[:,1:]
-                z = frames[:,:-1]
-                pred, _, _ = model(z, actions, 0*ts)
-                loss_rf = F.mse_loss(pred.double(), x0.double(), reduction="mean")
-            if True:
-                actions = actions_pred
-                ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
-                x0 = frames
-                z = t.randn_like(x0, device=device, dtype=dtype)
-                vel_true = x0 - z
-                x_t = x0 - ts[:, :, None, None, None] * vel_true
-                # because action_pred is offset by 1, each frame gets the action of the previous frame as an input in this way
-                vel_pred, _, _ = model(x_t, actions_pred, ts)
-                loss_rf = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
+            loss = loss_vq 
+            actions = actions_pred
+            ts = F.sigmoid(t.randn(actions.shape[0], actions.shape[1], device=device, dtype=dtype))
+            x0 = frames
+            z = t.randn_like(x0, device=device, dtype=dtype)
+            vel_true = x0 - z
+            x_t = x0 - ts[:, :, None, None, None] * vel_true
+            # because action_pred is offset by 1, each frame gets the action of the previous frame as an input in this way
+            vel_pred, _, _ = model(x_t, actions_pred, ts)
+            loss_rf = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
             loss += loss_rf
             
         loss.backward()
