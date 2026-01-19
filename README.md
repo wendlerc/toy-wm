@@ -7,7 +7,7 @@ A toy implementation of a diffusion transformer based "world model" trained on 9
 `uv run python -m src.main_genie` trains a latent action encoder + action conditioned flow model pipeline.
 
 The resulting actions currently look like this:
-![learnt actions](results/result_grid.mp4)
+![learnt actions](results/action_grid.mp4)
 
 **Training dashboard.**
 0: unconditional, 1:don't move, 2:up, 3:down (for cyan)
