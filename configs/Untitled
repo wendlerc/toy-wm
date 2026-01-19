@@ -1,0 +1,6 @@
+if cmodel.model_id == "dit":
+        get_model = dit
+    elif cmodel.model_id == "dit2":
+        get_model = dit2
+    else:
+        raise ValueError(f"Invalid model type: {cmodel.model_id}")

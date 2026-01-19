@@ -12,6 +12,8 @@ from torch import nn
 
 from ..models.dit import get_model as dit 
 from ..models.action_dit import get_model as action_dit
+from ..models.dit2 import get_model as dit2
+from ..models.action_dit2 import get_model as action_dit2
 from ..config import Config
 
 import yaml
@@ -29,6 +31,8 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
     
     if cmodel.model_id == "dit":
         get_model = dit
+    elif cmodel.model_id == "dit2":
+        get_model = dit2
     else:
         raise ValueError(f"Invalid model type: {cmodel.model_id}")
     C = cmodel.C if "C" in cmodel else 5000
@@ -88,6 +92,13 @@ def load_action_model_from_config(config_path: str, checkpoint_path: str = None,
     
     if caction is None:
         raise ValueError(f"Config at {config_path} does not contain an action_model section")
+
+    if caction.model_id == "action_dit":
+        get_model = action_dit
+    elif caction.model_id == "action_dit2":
+        get_model = action_dit2
+    else:
+        raise ValueError(f"Invalid model type: {cmodel.model_id}")
     
     dtype = ctrain.dtype if "dtype" in ctrain else t.float32 
     if dtype == "bf16" or dtype == "bfloat16":
@@ -99,7 +110,7 @@ def load_action_model_from_config(config_path: str, checkpoint_path: str = None,
     use_flex = cmodel.use_flex if "use_flex" in cmodel else False
     
     # Build ActionDit using shared params from main model + action-specific params
-    model = action_dit(
+    model = get_model(
         cmodel.height, cmodel.width, 
         action_dropout=caction.action_dropout,
         n_window=caction.n_window, 

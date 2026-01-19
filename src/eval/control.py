@@ -22,7 +22,11 @@ def annotate_frames(frames, annotations):
             # Place old frame below the 7px top margin
             extended_frames[batch_idx, t_idx, :, 8:, :] = frames_np[batch_idx, t_idx]
             # Write action
-            action_val = annotations[batch_idx, t_idx].item()
+            if annotations.shape[-1] == 2:
+                txt = f'{annotations[batch_idx, t_idx, 0].item()} {annotations[batch_idx, t_idx, 1].item()}'
+            else:
+                action_val = annotations[batch_idx, t_idx].item()
+                txt = f'{t_idx//30}: {action_val}'
             # Convert CHW to HWC for cv2
             frame_for_label = np.moveaxis(extended_frames[batch_idx, t_idx], 0, 2).copy()
             # Choose color: black text
@@ -30,7 +34,7 @@ def annotate_frames(frames, annotations):
             font_scale = 0.22
             thickness = 1
             org = (3, 6)
-            txt = f'{t_idx//30}: {action_val}'
+            
             cv2.putText(
                 frame_for_label, txt, org,
                 cv2.FONT_HERSHEY_SIMPLEX, font_scale, color, thickness, lineType=cv2.LINE_AA

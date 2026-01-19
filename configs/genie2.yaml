@@ -1,6 +1,6 @@
 model:
-  model_id: "dit"
-  n_actions: 10
+  model_id: "dit2"
+  n_actions: 5
   width: 24
   height: 24
   T: 1000
@@ -16,11 +16,10 @@ model:
   use_flex: true
   checkpoint: null
   rope_type: "rope"
-  checkpoint: "experiments/solar-frog-75" #"experiments/dry-fog-66"
 
 action_model:
-  model_id: "action_dit"
-  n_actions: 9
+  model_id: "action_dit2"
+  n_actions: 4
   d_actions: 16  
   beta: 0.1
   action_dropout: 0.2

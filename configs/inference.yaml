@@ -12,7 +12,7 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/pong/model.pt"  
+  checkpoint: "experiments/logical-sea-791" #"experiments/brisk-mountain-788" # "experiments/morning-blaze-787" #"experiments/pong/model.pt"  
   rope_type: "rope"
   use_flex: true
 
