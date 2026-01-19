@@ -101,7 +101,6 @@ def train(model, action_model,
                 grid1, grid2 = t.meshgrid(idx1, idx2, indexing='ij')
                 actions_prod = t.stack([grid1.reshape(-1), grid2.reshape(-1)], dim=-1).unsqueeze(0)  # shape (1, n_codes1*n_codes2, 2)
                 actions_prod = actions_prod.repeat_interleave(30, dim=1)
-                print(actions_prod)
                 frames_prod = run_actions(model, actions_prod.to(t.long).to(model.device))
                 log_dict["control_prod"] = log_video(frames_prod, fps=30)
             
