@@ -74,12 +74,6 @@ def train(model, action_model,
             #log_dict["codebook_grad_mean"] = action_model.learnt_actions.D.grad.mean().item()
             #log_dict["codebook_grad_std"] = action_model.learnt_actions.D.grad.std().item()
             log_dict["action_hist"] = labels_pred.detach().cpu().numpy()
-            checkpoint_manager.save(metric=loss.item(), 
-                                    step=step, 
-                                    model=model, 
-                                    action_model=action_model,
-                                    optimizer=optimizer, 
-                                    scheduler=scheduler)
             model.eval()
             # overwrite action embeddings with the ones from the codebook
             with t.no_grad():
@@ -102,6 +96,12 @@ def train(model, action_model,
             log_dict["control_actions"] = log_video(frames_actions, fps=30)
             frames_uncond = run_actions(model, t.zeros([1, 150], dtype=t.int32, device=device))
             log_dict["control_uncond"] = log_video(frames_uncond, fps=30)
+            checkpoint_manager.save(metric=loss.item(), 
+                                    step=step, 
+                                    model=model, 
+                                    action_model=action_model,
+                                    optimizer=optimizer, 
+                                    scheduler=scheduler)
         wandb.log(log_dict)
 
     return model
