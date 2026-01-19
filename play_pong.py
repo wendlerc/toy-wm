@@ -159,6 +159,20 @@ def _broadcast_ready():
     """Tell all clients whether the server is ready."""
     socketio.emit('server_status', {'ready': server_ready})
 
+def _max_action_id():
+    if model is None:
+        return None
+    action_emb = getattr(model, "action_emb", None)
+    if action_emb is None or not hasattr(action_emb, "num_embeddings"):
+        return None
+    return int(action_emb.num_embeddings) - 1
+
+def _clamp_action_id(action_id):
+    max_id = _max_action_id()
+    if max_id is None:
+        return int(action_id)
+    return int(max(0, min(int(action_id), max_id)))
+
 # --------------------------
 # Model init (pure eager) & warmup
 # --------------------------
@@ -361,6 +375,7 @@ def generate_frames():
 
         if len(actions_list) == 0 or actions_list[0] != 0:
             actions_list = [0] + actions_list
+        actions_list = [_clamp_action_id(a) for a in actions_list]
 
         _reset_cache_fresh()
 
@@ -398,7 +413,7 @@ def start_stream(n_steps=8, cfg=0.0, fps=30, clamp=True):
         target_fps = min(60, int(fps))
         frame_index = 0
         _reset_cache_fresh()
-        latest_action = 0  # first action = 0 (init)
+        latest_action = _clamp_action_id(0)  # first action = 0 (init)
         stream_thread = FrameScheduler(fps=target_fps, n_steps=min(10, n_steps), cfg=cfg, clamp=clamp)
         stream_running = True
         stream_thread.start()
@@ -528,7 +543,7 @@ def handle_action(data):
         if active_user_sid != sid:
             return  # Silently ignore actions from non-active users
     
-    action = int(data.get('action', 1))
+    action = _clamp_action_id(data.get('action', 1))
     with stream_lock:
         latest_action = action
     emit('action_ack', {'received': action, 'will_apply_to_frame_index': frame_index})

@@ -157,10 +157,23 @@
       // Actions: 0=NOOP, 1=UP, 2=DOWN
       document.addEventListener('keydown', (e) => {
         let action = null;
-        if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
-          action = 2; // UP
-        } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
-          action = 3; // DOWN
+        const key = e.key;
+        if (key >= '0' && key <= '9') {
+          action = parseInt(key, 10);
+        } else {
+          const keyMap = {
+            q: 10, w: 11, e: 12, r: 13, t: 14, y: 15, u: 16, i: 17, o: 18, p: 19,
+            a: 20, s: 21, d: 22, f: 23, g: 24, h: 25, j: 26, k: 27, l: 28,
+            z: 29, x: 30, c: 31, v: 32, b: 33, n: 34, m: 35
+          };
+          const mapped = keyMap[key.toLowerCase()];
+          if (mapped !== undefined) {
+            action = mapped;
+          } else if (key === 'ArrowUp' || key === 'w' || key === 'W') {
+            action = 2; // UP
+          } else if (key === 'ArrowDown' || key === 's' || key === 'S') {
+            action = 3; // DOWN
+          }
         }
         if (action !== null) {
           socket.emit('action', { action });

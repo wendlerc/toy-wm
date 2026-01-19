@@ -1,6 +1,6 @@
 model:
   model_id: "dit"
-  n_actions: 11
+  n_actions: 4
   width: 24
   height: 24
   T: 1000
@@ -16,11 +16,11 @@ model:
   use_flex: true
   checkpoint: null
   rope_type: "rope"
-  checkpoint: "experiments/dry-fog-66"
+  checkpoint: "experiments/zany-surf-71"
 
 action_model:
   model_id: "action_dit"
-  n_actions: 10
+  n_actions: 3
   d_actions: 16  
   beta: 0.1
   action_dropout: 0.2

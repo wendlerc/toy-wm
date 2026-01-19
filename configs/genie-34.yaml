@@ -1,6 +1,6 @@
 model:
   model_id: "dit"
-  n_actions: 11
+  n_actions: 35
   width: 24
   height: 24
   T: 1000
@@ -16,12 +16,12 @@ model:
   use_flex: true
   checkpoint: null
   rope_type: "rope"
-  checkpoint: "experiments/dry-fog-66"
+  checkpoint: "experiments/kind-meadow-73"
 
 action_model:
   model_id: "action_dit"
-  n_actions: 10
-  d_actions: 16  
+  n_actions: 34
+  d_actions: 64  
   beta: 0.1
   action_dropout: 0.2
   n_window: 21
