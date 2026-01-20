@@ -1,7 +1,7 @@
 from muon import SingleDeviceMuonWithAuxAdam
 import math
 
-def get_muon(model, lr1, lr2, betas, weight_decay, action_model=None):
+def get_muon(model, lr1, lr2, betas, weight_decay, action_model=None, action_decoder=None):
     body_weights = list(model.blocks.parameters())
     body_ids = {id(p) for p in body_weights}
     other_weights = [p for p in model.parameters() if id(p) not in body_ids]
@@ -14,6 +14,19 @@ def get_muon(model, lr1, lr2, betas, weight_decay, action_model=None):
         body_weights2 = list(action_model.dit.blocks.parameters())
         body_ids2 = {id(p) for p in body_weights2}
         other_weights2 = [p for p in action_model.parameters() if id(p) not in body_ids2]
+
+        hidden_weights2 = [p for p in body_weights2 if p.ndim >= 2]
+        hidden_gains_biases2 = [p for p in body_weights2 if p.ndim < 2]
+        nonhidden_params2 = list(other_weights2)
+
+        hidden_weights += hidden_weights2
+        hidden_gains_biases += hidden_gains_biases2
+        nonhidden_params += nonhidden_params2
+    
+    if action_decoder is not None:
+        body_weights2 = list(action_decoder.blocks.parameters())
+        body_ids2 = {id(p) for p in body_weights2}
+        other_weights2 = [p for p in action_decoder.parameters() if id(p) not in body_ids2]
 
         hidden_weights2 = [p for p in body_weights2 if p.ndim >= 2]
         hidden_gains_biases2 = [p for p in body_weights2 if p.ndim < 2]

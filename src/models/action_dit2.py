@@ -56,7 +56,7 @@ class ActionDit(nn.Module):
             codebook_dim = d_actions,
             decay = 0.8,             # the exponential moving average decay, lower means the dictionary will change faster
             commitment_weight = beta,  # the weight on the commitment loss
-            use_cosine_sim = True,
+            #use_cosine_sim = True,
             threshold_ema_dead_code = 2,
         )
 
@@ -66,11 +66,11 @@ class ActionDit(nn.Module):
             codebook_dim = d_actions,
             decay = 0.8,             # the exponential moving average decay, lower means the dictionary will change faster
             commitment_weight = beta,  # the weight on the commitment loss
-            use_cosine_sim = True,
+            #use_cosine_sim = True,
             threshold_ema_dead_code = 2,
         )
         self.action_dropout = action_dropout
-        self.unconditional_action = nn.Parameter(t.randn(2, d_model)) # todo the naming of vars is confusing right now. d_action should be actually the thing that is 16. 
+        self.unconditional_action = nn.Parameter(t.randn(2, d_model)*d_model**(-0.5)) # todo the naming of vars is confusing right now. d_action should be actually the thing that is 16. 
         self.first = True
 
     @t._dynamo.disable
