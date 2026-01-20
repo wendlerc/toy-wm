@@ -52,7 +52,7 @@ def train(model, action_model, action_decoder,
             loss = loss_vq 
             # action decoder maps from current frame to next frame directly
             ts_dummy = t.zeros(actions.shape[0], actions.shape[1]-1, device=device, dtype=dtype)
-            next_frames = action_decoder(frames[:, :-1], actions[:, 1:], ts_dummy) # first action is throwaway
+            next_frames, _, _ = action_decoder(frames[:, :-1], actions[:, 1:], ts_dummy) # first action is throwaway
             loss_lam = F.mse_loss(next_frames.double(), frames[:, 1:].double(), reduction="mean")
             loss += loss_lam
             # dynamics model  
@@ -94,7 +94,7 @@ def train(model, action_model, action_decoder,
                 # do some sanity checks; note that because we are comparing action embeddings before and after a gradient step, differences are supposed to be small but not 0.
                 labels_match = labels_pred.to(t.long)
                 embed_rows = model.action_emb1(labels_match[..., 0]) + model.action_emb2(labels_match[..., 1])
-                actions_match = actions_pred
+                actions_match = actions
                 cos_sim = F.cosine_similarity(actions_match, embed_rows, dim=-1)
                 log_dict["action_embed_cosine_mean"] = cos_sim.mean().item()
                 log_dict["action_embed_cosine_std"] = cos_sim.std().item()

@@ -19,7 +19,7 @@ from ..config import Config
 import yaml
 
 
-def load_model_from_config(config_path: str, checkpoint_path: str = None, strict: bool = True) -> nn.Module:
+def load_model_from_config(config_path: str, checkpoint_path: str = None, strict: bool = True, decoder_flag: bool = False) -> nn.Module:
     print(f"loading {config_path}")
     cmodel = Config.from_yaml(config_path).model
     ctrain = Config.from_yaml(config_path).train
@@ -41,7 +41,7 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
     model = get_model(
         cmodel.height, cmodel.width, 
         n_actions=n_actions,
-        n_window=cmodel.n_window, 
+        n_window=cmodel.n_window - 1 if decoder_flag else cmodel.n_window, 
         patch_size=cmodel.patch_size, 
         n_heads=cmodel.n_heads, d_model=cmodel.d_model, 
         n_blocks=cmodel.n_blocks, 

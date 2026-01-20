@@ -42,7 +42,7 @@ if __name__ == "__main__":
     frames, actions = next(iter(loader))
     model = load_model_from_config(args.config)
     action_model = load_action_model_from_config(args.config)
-    action_decoder = load_model_from_config(args.config)
+    action_decoder = load_model_from_config(args.config, decoder_flag=True)
 
     dtype = t.bfloat16 if ctrain.dtype == "bf16" else t.float32
     print(f"Using device: {device}, dtype: {dtype}")
@@ -54,6 +54,7 @@ if __name__ == "__main__":
         try:
             model = t.compile(model)#, mode="max-autotune")
             action_model = t.compile(action_model)
+            action_decoder = t.compile(action_decoder)
             print("Models compiled with torch.compile for acceleration.")
         except AttributeError:
             print("torch.compile is not available in this version of PyTorch; running without compilation.")
