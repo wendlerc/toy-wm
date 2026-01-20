@@ -62,7 +62,7 @@ def train(model, action_model, action_decoder,
             vel_true = x0 - z
             x_t = x0 - ts[:, :, None, None, None] * vel_true
             # because action_pred is offset by 1, each frame gets the action of the previous frame as an input in this way
-            vel_pred, _, _ = model(x_t, actions.detach(), ts)
+            vel_pred, _, _ = model(x_t, labels_pred, ts)
             loss_rf = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
             loss += loss_rf
             
@@ -87,18 +87,6 @@ def train(model, action_model, action_decoder,
             model.eval()
             # overwrite action embeddings with the ones from the codebook
             with t.no_grad():
-                codebook1 = action_model.learnt_actions1
-                model.action_emb1.weight.copy_(t.cat([action_model.unconditional_action[0].view(1, -1), codebook1.project_out(codebook1.codebook)], dim=0))
-                codebook2 = action_model.learnt_actions2
-                model.action_emb2.weight.copy_(t.cat([action_model.unconditional_action[1].view(1, -1), codebook2.project_out(codebook2.codebook)], dim=0))
-                # do some sanity checks; note that because we are comparing action embeddings before and after a gradient step, differences are supposed to be small but not 0.
-                labels_match = labels_pred.to(t.long)
-                embed_rows = model.action_emb1(labels_match[..., 0]) + model.action_emb2(labels_match[..., 1])
-                actions_match = actions
-                cos_sim = F.cosine_similarity(actions_match, embed_rows, dim=-1)
-                log_dict["action_embed_cosine_mean"] = cos_sim.mean().item()
-                log_dict["action_embed_cosine_std"] = cos_sim.std().item()
-                log_dict["action_embed_mse"] = F.mse_loss(actions_match, embed_rows).item()
                 frames_actions = run_actions(model, labels_pred[0].unsqueeze(0))
                 log_dict["control_actions"] = log_video(frames_actions, fps=30)
                 frames_uncond = run_actions(model, t.zeros([1, 150, 2], dtype=t.int32, device=device))
