@@ -134,6 +134,66 @@ def _paired_frames_with_actions_image(prev_frames, next_frames, actions, max_fra
     return wandb.Image(image)
 
 
+def _overlay_diff_with_actions_image(prev_frames, next_frames, actions, max_frames=16, cols=4):
+    prev_uint8 = _frames_to_uint8(prev_frames)
+    next_uint8 = _frames_to_uint8(next_frames)
+    if actions.ndim == 3:
+        actions = actions[0]
+    actions = actions.detach().cpu()
+
+    total = min(prev_uint8.shape[0], next_uint8.shape[0], actions.shape[0])
+    if total == 0:
+        return None
+    n = min(max_frames, total)
+    if n < total:
+        idx = t.linspace(0, total - 1, steps=n).long()
+    else:
+        idx = t.arange(total)
+
+    prev_sel = prev_uint8[idx]
+    next_sel = next_uint8[idx]
+    actions_sel = actions[idx]
+
+    rows = math.ceil(n / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 2.4, rows * 2.4))
+    axes = np.array(axes).reshape(rows, cols)
+
+    for i in range(rows * cols):
+        ax = axes.flat[i]
+        ax.axis("off")
+        if i >= n:
+            continue
+        prev_frame = prev_sel[i].permute(1, 2, 0).numpy().astype(np.float32)
+        next_frame = next_sel[i].permute(1, 2, 0).numpy().astype(np.float32)
+        if prev_frame.shape[2] == 1:
+            prev_frame = np.repeat(prev_frame, 3, axis=2)
+            next_frame = np.repeat(next_frame, 3, axis=2)
+
+        diff = np.abs(next_frame - prev_frame).mean(axis=2)
+        denom = max(diff.max(), 1.0)
+        diff_norm = (diff / denom).clip(0.0, 1.0)
+        alpha = 0.7 * diff_norm[..., None]
+        green = np.zeros_like(prev_frame)
+        green[..., 1] = 255.0
+        overlay = prev_frame * (1.0 - alpha) + green * alpha
+        overlay = overlay.clip(0, 255).astype(np.uint8)
+
+        ax.imshow(overlay)
+        action = actions_sel[i]
+        if action.numel() == 2:
+            title = f"a=({int(action[0])},{int(action[1])})"
+        else:
+            title = f"a={action.tolist()}"
+        ax.set_title(title, fontsize=8)
+
+    fig.tight_layout(pad=0.2)
+    fig.canvas.draw()
+    buf = np.asarray(fig.canvas.buffer_rgba())
+    image = buf[:, :, :3].copy()
+    plt.close(fig)
+    return wandb.Image(image)
+
+
 def train(model, action_model, action_decoder, 
           dataloader, 
           pred2frame=None, 
@@ -220,6 +280,11 @@ def train(model, action_model, action_decoder,
             )
             if paired_image is not None:
                 log_dict["action_decoder_pairs"] = paired_image
+            overlay_image = _overlay_diff_with_actions_image(
+                vis_prev_frames, vis_next_frames, labels_pred[:, 1:], max_frames=16, cols=4
+            )
+            if overlay_image is not None:
+                log_dict["action_decoder_overlay_diff"] = overlay_image
 
             model.eval()
             # overwrite action embeddings with the ones from the codebook
