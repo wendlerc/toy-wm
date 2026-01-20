@@ -1,6 +1,6 @@
 model:
   model_id: "dit2"
-  n_actions: 5
+  n_actions: 9
   width: 24
   height: 24
   T: 1000
@@ -19,8 +19,8 @@ model:
 
 action_model:
   model_id: "action_dit2"
-  n_actions: 4
-  d_actions: 16  
+  n_actions: 8
+  d_actions: 64  
   beta: 0.1
   action_dropout: 0.05
   n_window: 21
