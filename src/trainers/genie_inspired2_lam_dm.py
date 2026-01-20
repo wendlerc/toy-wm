@@ -77,8 +77,59 @@ def _frames_with_actions_image(frames, actions, max_frames=16, cols=4):
     fig.tight_layout(pad=0.2)
     fig.canvas.draw()
     width, height = fig.canvas.get_width_height()
-    image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    image = image.reshape(height, width, 3)
+    buf = np.asarray(fig.canvas.buffer_rgba())
+    image = buf[:, :, :3].copy()
+    plt.close(fig)
+    return wandb.Image(image)
+
+
+def _paired_frames_with_actions_image(prev_frames, next_frames, actions, max_frames=16, cols=4):
+    prev_uint8 = _frames_to_uint8(prev_frames)
+    next_uint8 = _frames_to_uint8(next_frames)
+    if actions.ndim == 3:
+        actions = actions[0]
+    actions = actions.detach().cpu()
+
+    total = min(prev_uint8.shape[0], next_uint8.shape[0], actions.shape[0])
+    if total == 0:
+        return None
+    n = min(max_frames, total)
+    if n < total:
+        idx = t.linspace(0, total - 1, steps=n).long()
+    else:
+        idx = t.arange(total)
+
+    prev_sel = prev_uint8[idx]
+    next_sel = next_uint8[idx]
+    actions_sel = actions[idx]
+
+    rows = math.ceil(n / cols)
+    fig, axes = plt.subplots(rows, cols, figsize=(cols * 2.8, rows * 2.4))
+    axes = np.array(axes).reshape(rows, cols)
+
+    for i in range(rows * cols):
+        ax = axes.flat[i]
+        ax.axis("off")
+        if i >= n:
+            continue
+        prev_frame = prev_sel[i].permute(1, 2, 0).numpy()
+        next_frame = next_sel[i].permute(1, 2, 0).numpy()
+        pair = np.concatenate([prev_frame, next_frame], axis=1)
+        if pair.shape[2] == 1:
+            ax.imshow(pair[:, :, 0], cmap="gray", vmin=0, vmax=255)
+        else:
+            ax.imshow(pair)
+        action = actions_sel[i]
+        if action.numel() == 2:
+            title = f"a=({int(action[0])},{int(action[1])})"
+        else:
+            title = f"a={action.tolist()}"
+        ax.set_title(title, fontsize=8)
+
+    fig.tight_layout(pad=0.2)
+    fig.canvas.draw()
+    buf = np.asarray(fig.canvas.buffer_rgba())
+    image = buf[:, :, :3].copy()
     plt.close(fig)
     return wandb.Image(image)
 
@@ -157,12 +208,18 @@ def train(model, action_model, action_decoder,
 
             vis_frames = pred2frame(frames)
             vis_next_frames = pred2frame(next_frames)
+            vis_prev_frames = pred2frame(frames[:, :-1])
             grid_image = _frames_with_actions_image(vis_frames, labels_pred, max_frames=16, cols=4)
             if grid_image is not None:
                 log_dict["frames_with_actions"] = grid_image
             decoder_pred_image = _frames_with_actions_image(vis_next_frames, labels_pred[:, 1:], max_frames=16, cols=4)
             if decoder_pred_image is not None:
                 log_dict["action_decoder_pred_frames"] = decoder_pred_image
+            paired_image = _paired_frames_with_actions_image(
+                vis_prev_frames, vis_next_frames, labels_pred[:, 1:], max_frames=16, cols=4
+            )
+            if paired_image is not None:
+                log_dict["action_decoder_pairs"] = paired_image
 
             model.eval()
             # overwrite action embeddings with the ones from the codebook
