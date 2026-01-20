@@ -48,6 +48,7 @@ if __name__ == "__main__":
     print(f"Using device: {device}, dtype: {dtype}")
     model = model.to(device).to(dtype)
     action_model = action_model.to(device).to(dtype)
+    action_decoder = action_decoder.to(device).to(dtype)
 
     if not cmodel.nocompile:
         try:
