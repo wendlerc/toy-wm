@@ -18,7 +18,7 @@ model:
   use_flex: true
 
 train:
-  trainer_id: "diffusion_forcing"
+  trainer_id: "scd"
   lr1: 0.02
   lr2: 3.0e-4
   betas: [0.9, 0.95]
@@ -28,7 +28,7 @@ train:
   batch_size: 64
   noclip: false
   duration: 1
-  fps: 30
+  fps: 31
   debug: false
   dtype: "bf16"
   action_dropout: 0.2
