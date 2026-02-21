@@ -67,12 +67,14 @@ class SeparableCausalDiT(nn.Module):
         self.decoder = FrameDecoder(height=height, width=width, d_model=d_model, T=T, in_channels=in_channels, patch_size=patch_size, n_heads=n_heads, expansion=expansion, n_blocks=n_blocks_decoder, n_registers=n_registers, debug=debug, rope_C=rope_C, rope_tmax=rope_tmax, rope_type=rope_type, use_flex=use_flex)
     
     def forward(self, 
-                z_for_encoder: Float[Tensor, "batch dur channels height width"], 
                 z_for_decoder: Float[Tensor, "batch dur channels height width"], 
                 actions: Float[Tensor, "batch dur"],
                 ts: Int[Tensor, "batch dur"],
                 cached_k: Optional[Float[Tensor, "layer batch dur seq d"]] = None,
-                cached_v: Optional[Float[Tensor, "layer batch dur seq d"]] = None):
+                cached_v: Optional[Float[Tensor, "layer batch dur seq d"]] = None,
+                z_for_encoder: Float[Tensor, "batch dur channels height width"] = None):
+        if z_for_encoder is None:
+            z_for_encoder = z_for_decoder 
         # TODO: consider sharing patchify between encoder and decoder
         cond_from_encoder, cached_k, cached_v = self.encoder(z_for_encoder, actions, ts, cached_k=cached_k, cached_v=cached_v)
         out = self.decoder(z_for_decoder, cond_from_encoder, ts)
@@ -146,7 +148,6 @@ class FrameDecoder(nn.Module):
         z = self.patch(z_t) # batch dur seq d
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
-        print(zr.shape, cond_from_encoder.shape)
         zr += cond_from_encoder
         batch, durzr, seqzr, d = zr.shape
         zr = zr.reshape(batch * durzr, -1, d) # batchdur seq d
