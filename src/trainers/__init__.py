@@ -1,0 +1,1 @@
+from .factory import load_train_fct_from_config

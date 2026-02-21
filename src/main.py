@@ -7,8 +7,10 @@ from omegaconf import OmegaConf
 
 from .datasets.pong1m import get_loader
 from .config import Config
-from .utils.checkpoint import CheckpointManager, load_model_from_config
-from .trainers.diffusion_forcing import train
+from .utils.checkpoint import CheckpointManager
+from .models import load_model_from_config
+from .trainers import load_train_fct_from_config
+
 
 t.set_float32_matmul_precision("high")
 
@@ -41,6 +43,7 @@ if __name__ == "__main__":
     loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
     frames, actions = next(iter(loader))
     model = load_model_from_config(args.config)
+    train = load_train_fct_from_config(args.config)
 
     dtype = t.bfloat16 if ctrain.dtype == "bf16" else t.float32
     print(f"Using device: {device}, dtype: {dtype}")

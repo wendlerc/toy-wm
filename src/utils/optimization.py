@@ -2,7 +2,7 @@ from muon import SingleDeviceMuonWithAuxAdam
 import math
 
 def get_muon(model, lr1, lr2, betas, weight_decay):
-    body_weights = list(model.blocks.parameters())
+    body_weights = list(model.transformer.parameters())
     body_ids = {id(p) for p in body_weights}
     other_weights = [p for p in model.parameters() if id(p) not in body_ids]
 

@@ -14,7 +14,9 @@ class TransformerConfig:
     patch_size : int = 2
     n_heads : int = 4
     d_model : int = 64
-    n_blocks : int = 12
+    n_blocks : int = 9
+    n_blocks_encoder : int = 6
+    n_blocks_decoder : int = 3
     n_heads : int = 12
     d_model : int = 384
     patch_size : int = 1
@@ -25,6 +27,7 @@ class TransformerConfig:
 
 @dataclass
 class TrainingConfig:
+    trainer_id : str = "diffusion_forcing"
     lr1 : float = 0.002
     lr2 : float = 3e-5
     betas : tuple = (0.9, 0.95)
