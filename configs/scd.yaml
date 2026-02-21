@@ -8,8 +8,8 @@ model:
   patch_size: 3
   n_heads: 20
   d_model: 320
-  n_blocks_encoder: 6
-  n_blocks_decoder: 3
+  n_blocks_encoder: 8
+  n_blocks_decoder: 4
   C: 5000
   bidirectional: false
   nocompile: false

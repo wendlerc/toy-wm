@@ -111,7 +111,7 @@ class FrameDecoder(nn.Module):
         self.n_blocks = n_blocks
         self.rope_C = rope_C
         if rope_tmax is None:
-            self.rope_tmax = (height//patch_size) * (width//patch_size) + n_registers
+            self.rope_tmax = 2*((height//patch_size) * (width//patch_size) + n_registers)
         else:
             self.rope_tmax = rope_tmax
         self.rope_type = rope_type
@@ -148,7 +148,7 @@ class FrameDecoder(nn.Module):
         z = self.patch(z_t) # batch dur seq d
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
-        zr += cond_from_encoder
+        zr = t.cat((zr, cond_from_encoder), dim=2)
         batch, durzr, seqzr, d = zr.shape
         zr = zr.reshape(batch * durzr, -1, d) # batchdur seq d
         cond_t = cond_t.reshape(batch * durzr, 1, d) # ok i guess here is different shape
@@ -157,6 +157,7 @@ class FrameDecoder(nn.Module):
         mu, sigma = self.modulation(cond_t).chunk(2, dim=-1)
         zr = modulate(self.norm(zr), mu, sigma)
         zr = zr.reshape(batch, durzr, seqzr, d)
+        zr, _ = zr.chunk(2, dim=2)
         out = self.unpatch(zr[:, :, :-self.n_registers])
         return out
     
