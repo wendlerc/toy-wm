@@ -37,7 +37,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from src.utils.checkpoint import load_model_from_config
-from src.trainers.diffusion_forcing import sample
+from src.inference.factory import load_sample_fct_from_config
 from src.datasets.pong1m import fixed2frame as pred2frame
 from src.config import Config
 
@@ -80,9 +80,11 @@ frame_index = 0
 
 noise_buf = None       # (1,1,3,24,24) on GPU
 action_buf = None      # (1,1) long on GPU
+prev_frame_buf = None  # (1,1,3,24,24) for SCD conditioning; None for DIT
 cpu_png_buffer = None  # BytesIO; reused
 
 step_once = None
+model_id = None        # "dit" or "scd"
 
 # --------------------------
 # Perf (new API)
@@ -154,6 +156,9 @@ def _png_base64_from_uint8(frame_uint8) -> str:
 
 def _reset_cache_fresh():
     cache.reset()
+    pfb = globals().get("prev_frame_buf")
+    if pfb is not None:
+        pfb.zero_()
 
 def _broadcast_ready():
     """Tell all clients whether the server is ready."""
@@ -164,7 +169,7 @@ def _broadcast_ready():
 # --------------------------
 def initialize_model(config_path):
     global model, device, cache
-    global noise_buf, action_buf, step_once, server_ready
+    global noise_buf, action_buf, prev_frame_buf, step_once, server_ready, model_id
 
     t_start = time.time()
     print("Loading model and preparing GPU runtime...")
@@ -173,11 +178,11 @@ def initialize_model(config_path):
     # Use the provided config_path from CLI or elsewhere
     config_path = os.path.abspath(config_path)
     
-    # Optimize checkpoint loading: copy to local storage if on network mount
-    t0 = time.time()
     cfg = Config.from_yaml(config_path)
     checkpoint_path = cfg.model.checkpoint
+    model_id = cfg.model.model_id
     
+    sample_fn = load_sample_fct_from_config(config_path)
     model = load_model_from_config(config_path, checkpoint_path=checkpoint_path, strict=False)
     model.to(device)  # Move model to GPU before activating cache
     model.eval()
@@ -185,21 +190,20 @@ def initialize_model(config_path):
     cache = model.create_cache(2)  # Cache will now be created on the same device as model
     
     # Configure dynamo to prevent recompilation from cache state changes
-    # allow_unspec_int_on_nn_module prevents recompilation when cache pointer attributes
-    # (local_loc, _write_ptr) change between frames
     t._dynamo.config.allow_unspec_int_on_nn_module = True
-    t._dynamo.config.cache_size_limit = 128  # Increased to handle cache state changes
+    t._dynamo.config.cache_size_limit = 128
     
     model = t.compile(model)
 
     H = W = 24
-    noise_buf = t.empty((1, 1, 3, H, W), device=device)
-    action_buf = t.empty((1, 1), dtype=t.long, device=device)
+    globals()["noise_buf"] = t.empty((1, 1, 3, H, W), device=device)
+    globals()["action_buf"] = t.empty((1, 1), dtype=t.long, device=device)
+    globals()["prev_frame_buf"] = t.zeros((1, 1, 3, H, W), device=device, dtype=model.dtype) if model_id == "scd" else None
+    globals()["model_id"] = model_id
 
     @_dynamo.disable
-    def _step(model_, action_scalar_long: int, n_steps: int, cfg: float, clamp: bool, cache=cache):
-        # Match the notebook logic exactly: create fresh noise each time
-        noise = t.randn(1, 1, 3, 24, 24, device=device)
+    def _step(model_, action_scalar_long: int, n_steps: int, cfg: float, clamp: bool, cache=cache, sample_fn=sample_fn):
+        noise = t.randn(1, 1, 3, 24, 24, device=device, dtype=model_.dtype)
         action_buf.fill_(int(action_scalar_long))
 
         assert action_buf.shape == (1, 1) and action_buf.dtype == t.long and action_buf.device == device, \
@@ -207,21 +211,20 @@ def initialize_model(config_path):
         assert noise.shape == (1, 1, 3, 24, 24) and noise.device == device, \
             f"noise wrong: { _shape(noise) }"
 
-        # Debug: Check cache state before sampling
         if cache is not None:
             cache_loc = cache.local_location
-            if cache_loc == 0:
-                # Cache is empty, this should be fine for the first frame
-                pass
-            elif cache_loc > 0:
-                # Check if cache has valid data
+            if cache_loc > 0:
                 k_test, v_test = cache.get()
                 if k_test.shape[2] == 0:
                     print(f"Warning: Cache returned empty tensors at frame {frame_index}, resetting...")
                     _reset_cache_fresh()
 
-        # Sample with the fresh noise (matching notebook: sample(model, noise, actions[:, aidx:aidx+1], ...))
-        z = sample(model_, noise, action_buf, num_steps=n_steps, cfg=cfg, negative_actions=None, cache=cache)
+        if globals()["model_id"] == "scd":
+            pfb = globals()["prev_frame_buf"]
+            z = sample_fn(model_, noise, pfb, action_buf, num_steps=n_steps, cfg=cfg, cache=cache)
+            pfb.copy_(z.detach())
+        else:
+            z = sample_fn(model_, noise, action_buf, num_steps=n_steps, cfg=cfg, negative_actions=None, cache=cache)
         
         if clamp:
             z = t.clamp(z, -1, 1)
@@ -395,7 +398,7 @@ def start_stream(n_steps=8, cfg=0.0, fps=30, clamp=True):
         raise RuntimeError("Server not ready")
     with stream_lock:
         stop_stream()
-        target_fps = min(60, int(fps))
+        target_fps = max(1, int(fps))
         frame_index = 0
         _reset_cache_fresh()
         latest_action = 0  # first action = 0 (init)
@@ -497,7 +500,7 @@ def handle_start_stream(data):
         
         n_steps = min(10, int(data.get('n_steps', 8)))
         cfg = float(data.get('cfg', 0))
-        fps = min(60, int(data.get('fps', 30)))
+        fps = max(1, int(data.get('fps', 30)))
         clamp = bool(data.get('clamp', True))
         print(f"Starting stream @ {fps} FPS (n_steps={n_steps}, cfg={cfg}, clamp={clamp})")
         try:
@@ -562,8 +565,8 @@ def handle_stop_stream():
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Pong backend server")
-    parser.add_argument('--config', type=str, default=os.path.join(project_root, "configs/inference.yaml"),
-                        help="Path to inference config YAML (default: configs/inference.yaml)")
+    parser.add_argument('--config', type=str, default=os.path.join(project_root, "configs/inference_scd.yaml"),
+                        help="Path to inference config (default: configs/inference_scd.yaml; use configs/inference.yaml for DIT)")
     args = parser.parse_args()
 
     initialize_model(args.config)

@@ -56,15 +56,25 @@ def load_model_from_config(config_path: str, checkpoint_path: str = None, strict
 
     if checkpoint_path is not None:
         if os.path.isdir(checkpoint_path):
-            index_path = os.path.join(checkpoint_path, "ckpt_index.json")
-            if not os.path.exists(index_path):
-                raise ValueError(f"Directory '{checkpoint_path}' does not contain ckpt_index.json")
-            with open(index_path, "r", encoding="utf-8") as f:
-                d = json.load(f)
-            entries = d.get("entries", [])
-            if not entries or not entries[0].get("path"):
-                raise ValueError(f"No valid entries found in {index_path}")
-            checkpoint_path = entries[0]["path"]
+            # Prefer model.pt if it exists (final trained model)
+            model_pt = os.path.join(checkpoint_path, "model.pt")
+            if os.path.isfile(model_pt):
+                checkpoint_path = model_pt
+            else:
+                index_path = os.path.join(checkpoint_path, "ckpt_index.json")
+                if not os.path.exists(index_path):
+                    raise ValueError(f"Directory '{checkpoint_path}' does not contain ckpt_index.json or model.pt")
+                with open(index_path, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                entries = d.get("entries", [])
+                if not entries or not entries[0].get("path"):
+                    raise ValueError(f"No valid entries found in {index_path}")
+                path_from_index = entries[0]["path"]
+                # Resolve path: index may store relative paths
+                if not os.path.isabs(path_from_index) and not os.path.isfile(path_from_index):
+                    checkpoint_path = os.path.join(checkpoint_path, os.path.basename(path_from_index))
+                else:
+                    checkpoint_path = path_from_index
 
         state_dict = t.load(checkpoint_path, weights_only=False)
         if "model" in state_dict:

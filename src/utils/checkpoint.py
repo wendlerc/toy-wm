@@ -10,7 +10,12 @@ from typing import Optional, Dict, Any, List
 import torch as t 
 from torch import nn
 
-    
+
+def load_model_from_config(config_path: str, checkpoint_path: str = None, strict: bool = True) -> nn.Module:
+    """Re-export from models.factory for backward compatibility."""
+    from ..models.factory import load_model_from_config as _load
+    return _load(config_path, checkpoint_path=checkpoint_path, strict=strict)
+
 
 class CheckpointManager:
     """
