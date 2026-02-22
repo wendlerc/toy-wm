@@ -565,8 +565,8 @@ def handle_stop_stream():
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Pong backend server")
-    parser.add_argument('--config', type=str, default=os.path.join(project_root, "configs/inference_scd.yaml"),
-                        help="Path to inference config (default: configs/inference_scd.yaml; use configs/inference.yaml for DIT)")
+    parser.add_argument('--config', type=str, default=os.path.join(project_root, "configs/inference.yaml"),
+                        help="Path to inference config (default: configs/inference.yaml for DIT; use configs/inference_scd.yaml for SCD)")
     args = parser.parse_args()
 
     initialize_model(args.config)

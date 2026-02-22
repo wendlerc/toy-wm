@@ -17,13 +17,17 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 # Inference / running the demo
 
 - download model `uv run scripts/download_model.py`
-- start pong server `uv run play_pong.py`
+- start pong server: `uv run python play_pong.py`
+  - uses `configs/inference.yaml` by default (DIT model, works with downloaded model); use `--config configs/inference_scd.yaml` for SCD
+  - server runs at http://localhost:4444
+- **For SCD:** you must train first with the SCD config (see Training). The downloaded model is DIT.
 
 # Training
 
 - download pong dataset `uv run scripts/download_dataset.py`
-- you can train your own pong simulator using (should take <= 30 minutes on a A6000): `uv run python -m src.main`
-- to use it update `configs/inference.yaml`. By default, the checkpoints will be in `./experiments/wandb-run-name`. If you want to play with your model while it is training you can put the run folder into the checkpoint field. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
+- train a pong simulator (should take <= 30 minutes on a A6000): `uv run python -m src.main`
+  - **default config is DIT** (`configs/default.yaml`). For SCD, use: `uv run python -m src.main --config configs/scd.yaml`
+- to use your trained model, update the checkpoint path in `configs/inference.yaml` (DIT) or `configs/inference_scd.yaml` (SCD). Checkpoints go to `./experiments/wandb-run-name`. Then run `uv run python play_pong.py`. There is also `generate_with_cache.ipynb` to play around with inference.
 
 # Technical details
 
