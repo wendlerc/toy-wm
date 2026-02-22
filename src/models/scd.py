@@ -72,13 +72,18 @@ class SeparableCausalDiT(nn.Module):
                 ts: Int[Tensor, "batch dur"],
                 cached_k: Optional[Float[Tensor, "layer batch dur seq d"]] = None,
                 cached_v: Optional[Float[Tensor, "layer batch dur seq d"]] = None,
-                z_for_encoder: Float[Tensor, "batch dur channels height width"] = None):
+                z_for_encoder: Float[Tensor, "batch dur channels height width"] = None,
+                encoder_output: Float[Tensor, "batch dur seq d"] = None):
         if z_for_encoder is None:
             z_for_encoder = z_for_decoder 
         # TODO: consider sharing patchify between encoder and decoder
-        cond_from_encoder, cached_k, cached_v = self.encoder(z_for_encoder, actions, ts, cached_k=cached_k, cached_v=cached_v)
-        out = self.decoder(z_for_decoder, cond_from_encoder, ts)
-        return out, cached_k, cached_v
+        if encoder_output is None:
+            encoder_output, k_update, v_update = self.encoder(z_for_encoder, actions, cached_k=cached_k, cached_v=cached_v)
+        else:
+            k_update, v_update = None, None
+        out = self.decoder(z_for_decoder, encoder_output, ts)
+        return out, encoder_output, k_update, v_update
+        
     
     def create_cache(self, batch_size):
         return self.encoder.create_cache(batch_size)
@@ -223,17 +228,11 @@ class VideoEncoder(nn.Module):
     def forward(self, 
                 z: Float[Tensor, "batch dur channels height width"], 
                 actions: Float[Tensor, "batch dur"],
-                ts: Int[Tensor, "batch dur"],
                 cached_k: Optional[Float[Tensor, "layer batch dur seq d"]] = None,
                 cached_v: Optional[Float[Tensor, "layer batch dur seq d"]] = None):
-        if ts.shape[1] == 1:
-            ts = ts.repeat(1, z.shape[1])
 
-        a = self.action_emb(actions) # batch dur d
-        ts_scaled = (ts.float() * (self.T - 1)).long()
-        cond = self.time_emb_mixer(self.time_emb(ts_scaled)) + a
+        cond = self.action_emb(actions) # batch dur d
         z = self.patch(z) # batch dur seq d
-
         # self.registers is in 1x
         zr = t.cat((z, self.registers[None, None].repeat([z.shape[0], z.shape[1], 1, 1])), dim=2)# z plus registers
         if self.bidirectional or cached_k is not None:

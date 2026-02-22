@@ -13,12 +13,13 @@ def annotate_frames(frames, annotations):
     frames_np = frames.cpu().numpy()  # Convert to numpy for cv2
     
     b, T, C, H, W = frames_np.shape
+    T_ann = min(T, annotations.shape[1])  # align with annotations length
     extended_h = H + 8
     extended_w = W 
     extended_frames = np.ones((b, T, C, extended_h, extended_w), dtype=np.uint8) * 255  # White background
 
     for batch_idx in range(b):
-        for t_idx in range(T):
+        for t_idx in range(T_ann):
             # Place old frame below the 7px top margin
             extended_frames[batch_idx, t_idx, :, 8:, :] = frames_np[batch_idx, t_idx]
             # Write action
@@ -42,7 +43,7 @@ def annotate_frames(frames, annotations):
     extended_frames_torch = t.from_numpy(extended_frames)
     return extended_frames_torch
 
-def basic_control(model, n_steps=6):
+def basic_control(model, sample_video=sample_video, n_steps=6):
     actions = t.tensor(30*[1] + 60*[2] + 60*[3] + 30*[0], dtype=t.int32, device=model.device).unsqueeze(0)
     pred = sample_video(model, actions, n_steps=n_steps)
     frames = fixed2frame(pred)  

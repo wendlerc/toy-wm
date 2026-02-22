@@ -5,7 +5,7 @@ from tqdm import tqdm
 from functools import partial
 import random
 
-from ..inference.sampling import sample
+from ..inference.scd import sample_video
 from ..eval import basic_control
 from ..utils import log_video, get_muon, lr_lambda
 
@@ -60,7 +60,7 @@ def train(model, dataloader,
             x0 = frames_dec
             vel_true = x0 - z
             x_t = x0 - ts[:, :, None, None, None] * vel_true
-            vel_pred, _, _ = model(z_for_decoder=x_t, ts=ts, z_for_encoder=frames_enc, actions=actions_enc)
+            vel_pred, _, _, _ = model(z_for_decoder=x_t, ts=ts, z_for_encoder=frames_enc, actions=actions_enc)
             loss = F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean")
         
         loss.backward()
@@ -75,21 +75,8 @@ def train(model, dataloader,
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
             model.eval()
             log_dict["fwd"] = log_video(pred2frame(x_t[:1] + vel_pred[:1]), fps=30)
-            """
-            if frames.shape[1] == 1: 
-                with t.autocast(device_type=device, dtype=dtype):
-                    z_sampled = sample(model, 
-                                    t.randn_like(frames[:30], device=device, dtype=dtype), 
-                                    actions[:30], num_steps=10)
-                    z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
-            else:
-                with t.autocast(device_type=device, dtype=dtype):
-                    z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
-            frames_sampled = pred2frame(z_sampled)
-            log_dict["sample"] = log_video(frames_sampled, fps=30)
-            frames_control = basic_control(model)
+            frames_control = basic_control(model, sample_video=sample_video)
             log_dict["control"] = log_video(frames_control, fps=30)
-            """
         wandb.log(log_dict)
 
     return model
