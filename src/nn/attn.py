@@ -212,8 +212,7 @@ class Attention(nn.Module):
         self.d_model = d_model
         self.n_heads = n_heads
         self.d_head = d_model // n_heads
-        assert d_model % n_heads == 0, "d_model must be divisible by d_head"
-
+        assert d_model % n_heads == 0, f"d_model must be divisible by d_head. d_model: {d_model}, n_heads: {n_heads}, d_head: {self.d_head}"
         self.QKV = nn.Linear(self.d_model, 3 * self.d_model)
         self.O = nn.Linear(self.d_model, self.d_model)
         self.lnq = RMSNorm(self.d_head)
