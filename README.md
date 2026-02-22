@@ -37,6 +37,7 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 - to train a frame-autoregressive model, diffusion forcing is used: https://arxiv.org/abs/2407.01392
 - frame-autoregressive diffusion transformers allow for efficient inference by leveraging KV caching
 - default settings use simple RoPE (https://arxiv.org/abs/2104.09864) over the entire sequence without special treatment of spatial or temporal dimensions
+- addition in this branch: seperable causal diffusion https://arxiv.org/abs/2602.10095
 
 # Resources
 
