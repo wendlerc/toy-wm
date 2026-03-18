@@ -16,8 +16,18 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 
 # Inference / running the demo
 
+## Pong
+
 - download model `uv run scripts/download_model.py`
-- start pong server `uv run play_pong.py`
+- start pong server: `uv run python play_pong.py`
+- server runs at http://localhost:5000
+
+## Doom
+
+- train a model first (see Training below), or use a checkpoint
+- start doom server: `uv run python play_doom.py --checkpoint experiments/<run-name>/model.pt`
+- server runs at http://localhost:4444
+- controls: WASD + mouse look + click to shoot (click frame to capture mouse, Esc to release)
 
 # Training
 
