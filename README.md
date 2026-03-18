@@ -1,6 +1,6 @@
 # TLDR
 
-A toy implementation of a diffusion transformer based "world model" trained on 9 hours of pong. Shoutout [@pufferlib](https://github.com/PufferAI/PufferLib/blob/3.0/pufferlib/ocean/pong/pong.h) for their great pong environment that was used for dataset creation.
+A toy implementation of a diffusion transformer based "world model". Supports both **Pong** (pixel space, 9 hours of gameplay) and **Doom** (latent space via DC-AE, PvP deathmatch). Shoutout [@pufferlib](https://github.com/PufferAI/PufferLib/blob/3.0/pufferlib/ocean/pong/pong.h) for their great pong environment that was used for dataset creation.
 
 **Training dashboard.**
 0: unconditional, 1:don't move, 2:up, 3:down (for cyan)
@@ -21,9 +21,25 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 
 # Training
 
+## Pong
+
 - download pong dataset `uv run scripts/download_dataset.py`
-- you can train your own pong simulator using (should take <= 30 minutes on a A6000): `uv run python -m src.main`
+- train a pong simulator (should take <= 30 minutes on a A6000): `uv run python -m src.main`
 - to use it update `configs/inference.yaml`. By default, the checkpoints will be in `./experiments/wandb-run-name`. If you want to play with your model while it is training you can put the run folder into the checkpoint field. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
+
+## Doom (latent diffusion)
+
+The Doom world model operates in latent space using [DC-AE](https://huggingface.co/mit-han-lab/dc-ae-lite-f32c32-sana-1.1-diffusers) (32x spatial compression, 32 channels). The dataset contains pre-encoded latent frames from Doom PvP deathmatch gameplay.
+
+- download doom dataset (5 shards / ~20 GB by default for a quick start):
+  ```bash
+  uv run scripts/download_doom_dataset.py
+  # or download fewer shards for a minimal test:
+  uv run scripts/download_doom_dataset.py --n-shards 1
+  # or download everything (~770 GB):
+  uv run scripts/download_doom_dataset.py --all
+  ```
+- train a doom world model: `uv run python -m src.main --config configs/doom_diffusion_forcing.yaml`
 
 # Technical details
 

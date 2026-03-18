@@ -18,32 +18,36 @@ import yaml
 
 def load_model_from_config(config_path: str, checkpoint_path: str = None, strict: bool = True) -> nn.Module:
     print(f"loading {config_path}")
-    cmodel = Config.from_yaml(config_path).model
-    ctrain = Config.from_yaml(config_path).train
-    dtype = ctrain.dtype if "dtype" in ctrain else t.float32 
+    cfg = Config.from_yaml(config_path)
+    cmodel = cfg.model
+    ctrain = cfg.train
+    cdataset = cfg.dataset
+    dtype = ctrain.dtype if "dtype" in ctrain else t.float32
     if dtype == "bf16" or dtype == "bfloat16":
         dtype = t.bfloat16
     elif dtype == "fp16" or dtype == "float16":
         dtype = t.float16
-    
+
     if cmodel.model_id == "dit":
         get_model = dit
     else:
         raise ValueError(f"Invalid model type: {cmodel.model_id}")
     C = cmodel.C if "C" in cmodel else 5000
     use_flex = cmodel.use_flex if "use_flex" in cmodel else False
+    game = cdataset.dataset_id if hasattr(cdataset, 'dataset_id') else "pong1p"
     model = get_model(
-        cmodel.height, cmodel.width, 
-        n_window=cmodel.n_window, 
-        patch_size=cmodel.patch_size, 
-        n_heads=cmodel.n_heads, d_model=cmodel.d_model, 
-        n_blocks=cmodel.n_blocks, 
-        T=cmodel.T, 
+        cmodel.height, cmodel.width,
+        n_window=cmodel.n_window,
+        patch_size=cmodel.patch_size,
+        n_heads=cmodel.n_heads, d_model=cmodel.d_model,
+        n_blocks=cmodel.n_blocks,
+        T=cmodel.T,
         in_channels=cmodel.in_channels,
         bidirectional=cmodel.bidirectional,
         rope_type=cmodel.rope_type,
         C=cmodel.C,
-        use_flex=use_flex
+        use_flex=use_flex,
+        game=game,
     )
 
     # If checkpoint_path is a folder, find top entry in ckpt_index.json

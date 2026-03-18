@@ -27,6 +27,7 @@ dependencies = [
     "torchvision>=0.24.0",
     "tqdm>=4.67.1",
     "wandb[media]>=0.22.3",
+    "webdataset>=1.0.2",
 ]
 
 [tool.uv.sources]

@@ -5,7 +5,7 @@ from datetime import datetime
 import torch as t
 from omegaconf import OmegaConf
 
-from .datasets.pong1m import get_loader
+from .datasets import load_loader_and_pred2frame_from_config
 from .config import Config
 from .utils.checkpoint import CheckpointManager, load_model_from_config
 from .trainers.diffusion_forcing import train
@@ -38,7 +38,7 @@ if __name__ == "__main__":
     else:
         device = "cpu"
 
-    loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
+    loader, pred2frame = load_loader_and_pred2frame_from_config(args.config)
     frames, actions = next(iter(loader))
     model = load_model_from_config(args.config)
 
