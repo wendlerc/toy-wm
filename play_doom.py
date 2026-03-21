@@ -370,7 +370,7 @@ def initialize_model(config_path, checkpoint_override=None):
 # Frame streaming
 # ---------------------------------------------------------------------------
 class FrameScheduler(threading.Thread):
-    def __init__(self, fps=30, n_steps=6, clamp=False):
+    def __init__(self, fps=30, n_steps=5, clamp=False):
         super().__init__(daemon=True)
         self.frame_period = 1.0 / max(1, int(fps))
         self.n_steps = int(n_steps)
@@ -462,7 +462,7 @@ def health():
 # ---------------------------------------------------------------------------
 # Socket events
 # ---------------------------------------------------------------------------
-def start_stream(n_steps=6, fps=30, clamp=False, start_frame_idx=-1):
+def start_stream(n_steps=5, fps=30, clamp=False, start_frame_idx=-1):
     global stream_thread, stream_running, frame_index, target_fps
     global latest_keys, turn_accum, is_init_frame, uncond_mode
     if not server_ready:
