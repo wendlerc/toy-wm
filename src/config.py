@@ -31,12 +31,10 @@ class TrainingConfig:
     betas : tuple = (0.9, 0.95)
     weight_decay : float = 1e-5
     max_steps : int = 26000
-    batch_size : int = 32
+    warmup_steps : int = 100
     noclip : bool = False
-    duration : int = 1
-    fps : int = 7
-    in_channels : int = 3
-    debug : bool = False
+    dtype : str = "bf16"
+    action_dropout : float = 0.2
 
 
 @dataclass

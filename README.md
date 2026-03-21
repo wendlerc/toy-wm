@@ -41,15 +41,44 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 
 The Doom world model operates in latent space using [DC-AE](https://huggingface.co/mit-han-lab/dc-ae-lite-f32c32-sana-1.1-diffusers) (32x spatial compression, 32 channels). The dataset contains pre-encoded latent frames from Doom PvP deathmatch gameplay.
 
-- download doom dataset (5 shards / ~20 GB by default for a quick start):
-  ```bash
-  uv run scripts/download_doom_dataset.py
-  # or download fewer shards for a minimal test:
-  uv run scripts/download_doom_dataset.py --n-shards 1
-  # or download everything (~770 GB):
-  uv run scripts/download_doom_dataset.py --all
-  ```
-- train a doom world model: `uv run python -m src.main --config configs/doom_diffusion_forcing.yaml`
+### 1. Download dataset
+
+```bash
+# 5 shards / ~20 GB (default, enough for training):
+uv run scripts/download_doom_dataset.py
+# or to a custom location:
+uv run scripts/download_doom_dataset.py --output /tmp/doom_latents
+# minimal test (1 shard / ~4 GB):
+uv run scripts/download_doom_dataset.py --n-shards 1
+# everything (~770 GB):
+uv run scripts/download_doom_dataset.py --all
+```
+
+If you download to a custom location, symlink it to the config's expected path:
+```bash
+mkdir -p datasets
+ln -s /tmp/doom_latents datasets/doom_latents
+```
+
+### 2. Train
+
+```bash
+uv run python -m src.main --config configs/doom_diffusion_forcing.yaml
+```
+
+The default config trains for 5000 steps with batch_size=64 in bf16. On an A6000 (48 GB), this takes ~2.5 hours at ~1.65s/step. Loss goes from ~5.4 to ~1.3. The first step is slow (~4 min) due to `torch.compile` graph capture.
+
+Checkpoints are saved every 500 steps to `experiments/<wandb-run-name>/`. The final model is saved as `model.pt` in the same directory.
+
+### 3. Play
+
+```bash
+uv run python play_doom.py --checkpoint experiments/<run-name>/model.pt
+```
+
+The server starts at http://localhost:4444. Startup takes several minutes (model + VAE compilation, warmup, start frame loading). Controls: WASD to move, mouse to look, click to shoot (click the frame to capture the mouse, Esc to release). The DC-AE VAE decoder (~1 GB) is downloaded automatically on first use.
+
+If running on a remote server, use SSH port forwarding: `ssh -L 4444:localhost:4444 <host>`
 
 # Technical details
 
