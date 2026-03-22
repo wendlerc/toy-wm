@@ -35,7 +35,7 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 
 - download pong dataset `uv run scripts/download_dataset.py`
 - train a pong simulator (should take <= 30 minutes on a A6000): `uv run python -m src.main --config configs/pong.yaml`. The first few training steps are slow due to `torch.compile` graph capture.
-- to use it update `configs/inference.yaml`. By default, the checkpoints will be in `./experiments/wandb-run-name`. If you want to play with your model while it is training you can put the run folder into the checkpoint field. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
+- to use it update `configs/pong_inference.yaml`. By default, the checkpoints will be in `./experiments/wandb-run-name`. If you want to play with your model while it is training you can put the run folder into the checkpoint field. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
 
 ## Doom (latent diffusion)
 
