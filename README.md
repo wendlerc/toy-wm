@@ -24,6 +24,8 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 
 ## Doom
 
+[![Doom world model demo](https://img.shields.io/badge/demo-video-blue)](https://x.com/wendlerch/status/2031041238439256164)
+
 - train a model first (see Training below), or use a checkpoint
 - start doom server: `uv run python play_doom.py --checkpoint experiments/<run-name>/model.pt`
 - server runs at http://localhost:4444
