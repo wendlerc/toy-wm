@@ -12,7 +12,7 @@ model:
   C: 5000
   bidirectional: false
   nocompile: false
-  checkpoint: "experiments/pong/model.pt"  
+  checkpoint: "experiments/hardy-totem-906/"
   rope_type: "rope"
   use_flex: true
 
