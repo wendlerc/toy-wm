@@ -28,7 +28,6 @@ for filename in files_to_download:
             repo_type="dataset",
             token=os.environ.get("HF_TOKEN"),
             local_dir=str(dataset_path),
-            local_dir_use_symlinks=False,
         )
         # Verify the file was downloaded to the expected location
         expected_path = dataset_path / filename

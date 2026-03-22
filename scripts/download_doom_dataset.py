@@ -69,7 +69,6 @@ def main():
                 repo_type="dataset",
                 token=os.environ.get("HF_TOKEN"),
                 local_dir=str(output_dir),
-                local_dir_use_symlinks=False,
             )
             # hf_hub_download puts it in data/ subfolder, move it up
             downloaded_path = output_dir / filename  # output_dir/data/latent-*.tar
