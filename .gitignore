@@ -5,10 +5,12 @@ data/
 wandb/
 .venv/
 experiments/
+datasets/doom_latents/
 *.mp4
 *.npy
 *.png
 *.gif
+*.tar
 __pycache__/
 *.py[codz]
 *$py.class

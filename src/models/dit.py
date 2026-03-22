@@ -7,6 +7,7 @@ from ..nn.patch import Patch, UnPatch
 from ..nn.geglu import GEGLU
 from ..nn.pe import NumericEncoding, RoPE, LearnRoPE, VidRoPE
 from ..nn.norm import RMSNorm
+from .actionembs import Pong1P, Doom1P
 from jaxtyping import Float, Bool, Int
 from torch import Tensor
 from typing import Optional, Literal
@@ -72,16 +73,18 @@ class CausalBlock(nn.Module):
 
 class CausalDit(nn.Module):
     def __init__(self, height, width, n_window, d_model, T=1000, in_channels=3,
-                       patch_size=2, n_heads=8, expansion=4, n_blocks=6, 
-                       n_registers=1, n_actions=4, bidirectional=False, 
-                       debug=False, 
+                       patch_size=2, n_heads=8, expansion=4, n_blocks=6,
+                       n_registers=1, n_actions=4, bidirectional=False,
+                       debug=False,
                        rope_C=10000,
                        rope_tmax=None,
                        rope_type: Literal["rope", "learn", "vid"] = "rope",
-                       use_flex: bool = False):
+                       use_flex: bool = False,
+                       game: Literal["pong1p", "doom1p"] = "pong1p"):
         super().__init__()
         self.height = height
         self.width = width
+        self.in_channels = in_channels
         self.n_window = n_window
         self.d_model = d_model
         self.n_heads = n_heads
@@ -129,7 +132,10 @@ class CausalDit(nn.Module):
         self.patch = Patch(in_channels=in_channels, out_channels=d_model, patch_size=patch_size)
         self.norm = RMSNorm(d_model)
         self.unpatch = UnPatch(height, width, in_channels=d_model, out_channels=in_channels, patch_size=patch_size)
-        self.action_emb = nn.Embedding(n_actions, d_model)
+        if game == "doom1p":
+            self.action_emb = Doom1P(d_model)
+        else:
+            self.action_emb = Pong1P(d_model)
         self.registers = nn.Parameter(t.randn(n_registers, d_model) * 1/d_model**0.5)
         self.time_emb = NumericEncoding(dim=d_model, n_max=T)
         self.time_emb_mixer = nn.Linear(d_model, d_model)
@@ -217,30 +223,32 @@ class CausalDit(nn.Module):
         return self.parameters().__next__().dtype
 
 
-def get_model(height, width, 
-              n_window=5, 
-              d_model=64, 
-              T=100, 
-              n_blocks=2, 
-              patch_size=2, 
-              n_heads=8, 
-              bidirectional=False, 
-              in_channels=3, 
-              C=10000, 
+def get_model(height, width,
+              n_window=5,
+              d_model=64,
+              T=100,
+              n_blocks=2,
+              patch_size=2,
+              n_heads=8,
+              bidirectional=False,
+              in_channels=3,
+              C=10000,
               rope_type: Literal["rope", "learn", "vid"] = "rope",
-              use_flex=False):
-    return CausalDit(height, width, 
-                     n_window, 
-                     d_model, 
-                     T, 
-                     in_channels=in_channels, 
-                     n_blocks=n_blocks, 
-                     patch_size=patch_size, 
-                     n_heads=n_heads, 
-                     bidirectional=bidirectional, 
-                     rope_C=C, 
+              use_flex=False,
+              game: Literal["pong1p", "doom1p"] = "pong1p"):
+    return CausalDit(height, width,
+                     n_window,
+                     d_model,
+                     T,
+                     in_channels=in_channels,
+                     n_blocks=n_blocks,
+                     patch_size=patch_size,
+                     n_heads=n_heads,
+                     bidirectional=bidirectional,
+                     rope_C=C,
                      rope_type=rope_type,
-                     use_flex=use_flex)
+                     use_flex=use_flex,
+                     game=game)
 
 if __name__ == "__main__":
     print("running w/o cache")

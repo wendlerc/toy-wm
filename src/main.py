@@ -5,19 +5,24 @@ from datetime import datetime
 import torch as t
 from omegaconf import OmegaConf
 
-from .datasets.pong1m import get_loader
+from .datasets import load_loader_and_pred2frame_from_config
 from .config import Config
 from .utils.checkpoint import CheckpointManager, load_model_from_config
 from .trainers.diffusion_forcing import train
 
-t.set_float32_matmul_precision("high")
+t.backends.cuda.matmul.fp32_precision = "tf32"
+t.backends.cudnn.conv.fp32_precision = "tf32"
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()    
-    parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, default="configs/pong.yaml")
+    parser.add_argument("--shard-dir", type=str, default=None,
+                        help="Override dataset.shard_dir (path to doom latent shards)")
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config)
+    if args.shard_dir is not None:
+        cfg.dataset.shard_dir = args.shard_dir
     cmodel = cfg.model
     ctrain = cfg.train
 
@@ -38,7 +43,7 @@ if __name__ == "__main__":
     else:
         device = "cpu"
 
-    loader, pred2frame = get_loader(batch_size=ctrain.batch_size, duration=ctrain.duration, fps=ctrain.fps, debug=ctrain.debug) # 7 was the max that does not go oom
+    loader, pred2frame = load_loader_and_pred2frame_from_config(cfg)
     frames, actions = next(iter(loader))
     model = load_model_from_config(args.config)
 
@@ -49,7 +54,7 @@ if __name__ == "__main__":
 
     if not cmodel.nocompile:
         try:
-            model = t.compile(model)#, mode="max-autotune")
+            model = t.compile(model)
             print("Model compiled with torch.compile for acceleration.")
         except AttributeError:
             print("torch.compile is not available in this version of PyTorch; running without compilation.")
@@ -58,11 +63,13 @@ if __name__ == "__main__":
     checkpoint_manager = CheckpointManager(save_dir, k=5, mode="min", metric_name="loss")
     p_pretrain = ctrain.p_pretrain if "p_pretrain" in ctrain else 1.0
     action_dropout = ctrain.action_dropout if "action_dropout" in ctrain else 0.2
+    eval_each_n_steps = ctrain.eval_each_n_steps if "eval_each_n_steps" in ctrain else 500
     model = train(model, loader, pred2frame=pred2frame,
-                  lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
+                  lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas,
                   weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
                   clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
-                  warmup_steps=ctrain.warmup_steps, device=device, dtype=dtype, action_dropout=action_dropout)
+                  warmup_steps=ctrain.warmup_steps, device=device, dtype=dtype, action_dropout=action_dropout,
+                  eval_each_n_steps=eval_each_n_steps)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))

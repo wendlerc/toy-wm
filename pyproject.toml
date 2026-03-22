@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "accelerate>=1.13.0",
     "diffusers>=0.35.2",
     "einops>=0.8.1",
     "eventlet>=0.40.3",
@@ -27,7 +28,13 @@ dependencies = [
     "torchvision>=0.24.0",
     "tqdm>=4.67.1",
     "wandb[media]>=0.22.3",
+    "webdataset>=1.0.2",
 ]
 
 [tool.uv.sources]
 muon-optimizer = { git = "https://github.com/KellerJordan/Muon" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

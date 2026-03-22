@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dc_fields, MISSING
 from typing import List, Optional
 import yaml
 from omegaconf import OmegaConf
@@ -25,35 +25,66 @@ class TransformerConfig:
 
 @dataclass
 class TrainingConfig:
+    trainer_id : str = "diffusion_forcing"
     lr1 : float = 0.002
     lr2 : float = 3e-5
     betas : tuple = (0.9, 0.95)
     weight_decay : float = 1e-5
     max_steps : int = 26000
-    batch_size : int = 32
+    warmup_steps : int = 100
     noclip : bool = False
-    duration : int = 1
-    fps : int = 7
-    in_channels : int = 3
-    debug : bool = False
+    dtype : str = "bf16"
+    action_dropout : float = 0.2
+    eval_each_n_steps : int = 500
 
 
 @dataclass
 class WANDBConfig:
     name : str = "toy-wm"
     project : str = None
-    run_name : str = None 
+    run_name : str = None
+
+@dataclass
+class DatasetConfig:
+    dataset_id: str = "pong1p"
+    num_workers: int = 8
+    batch_size: int = 64
+    duration: int = 1
+    fps: int = 30
+    shuffle: bool = True
+    debug: bool = False
+    shard_dir: Optional[str] = None
 
 @dataclass
 class Config:
     model: TransformerConfig
     train: TrainingConfig
     wandb: WANDBConfig
+    dataset: DatasetConfig = field(default_factory=DatasetConfig)
 
     @classmethod
     def from_yaml(cls, path):
         with open(path) as f:
             raw_cfg = yaml.safe_load(f)
-        
+
+        # Merge each sub-config with dataclass defaults so partial
+        # yaml sections (e.g. dataset with only 3 of 8 fields) work.
+        sub_configs = {
+            'model': TransformerConfig,
+            'train': TrainingConfig,
+            'wandb': WANDBConfig,
+            'dataset': DatasetConfig,
+        }
+        for key, dc_cls in sub_configs.items():
+            defaults = {}
+            for f in dc_fields(dc_cls):
+                if f.default is not MISSING:
+                    defaults[f.name] = f.default
+                elif f.default_factory is not MISSING:
+                    defaults[f.name] = f.default_factory()
+            section = raw_cfg.get(key, {}) or {}
+            defaults.update(section)
+            raw_cfg[key] = defaults
+
         cfg = OmegaConf.create(raw_cfg)
         return OmegaConf.structured(cls(**cfg))

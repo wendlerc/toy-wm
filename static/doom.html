@@ -1,0 +1,375 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>DOOM World Model</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+      html, body { margin:0; height:100%; background:#0a0a0a; color:#ddd; font-family: 'Courier New', monospace; }
+      #overlay {
+        position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+        background: rgba(0,0,0,0.9); z-index: 9999; transition: opacity 200ms ease;
+      }
+      #overlay.hidden { opacity: 0; pointer-events: none; }
+      .spinner {
+        width: 64px; height: 64px; border: 6px solid #333; border-top-color: #c00; border-radius: 50%;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      #statusText { margin-top: 12px; color: #888; text-align: center; font-size: 14px; white-space: pre-line; }
+      #app { padding: 16px; max-width: 720px; margin: 0 auto; }
+      h1 { color: #c00; font-size: 28px; letter-spacing: 4px; margin-bottom: 8px; }
+      button {
+        padding: 8px 16px; background: #900; color: #fff; border: 1px solid #c00;
+        border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 14px;
+        margin-right: 8px;
+      }
+      button:hover { background: #b00; }
+      button:disabled { opacity: .4; cursor: not-allowed; }
+      .controls { margin-bottom: 12px; }
+      .controls label { display: block; margin-bottom: 6px; font-size: 13px; color: #aaa; }
+      .controls input { width: 60px; padding: 4px; margin-left: 8px; background: #222; color: #eee; border: 1px solid #444; }
+      #frameContainer {
+        position: relative; display: inline-block; margin-top: 12px; cursor: crosshair;
+      }
+      #frame {
+        image-rendering: auto; width: 640px; height: 480px; background: #111;
+        display: block; border: 1px solid #333;
+      }
+      #lockHint {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+        background: rgba(0,0,0,0.7); color: #ccc; padding: 12px 20px; border-radius: 8px;
+        font-size: 15px; pointer-events: none; transition: opacity 0.3s;
+      }
+      #lockHint.hidden { opacity: 0; }
+      .hud { margin-top: 10px; font-size: 14px; color: #888; line-height: 1.6; }
+      .hud span { color: #ccc; }
+      .key-guide {
+        margin-top: 16px; padding: 12px; background: #111; border: 1px solid #333;
+        border-radius: 4px; font-size: 13px; line-height: 1.8;
+      }
+      .key-guide b { color: #c00; }
+      .active { color: #0f0; font-weight: bold; }
+      #startFramePicker {
+        margin-top: 12px; margin-bottom: 12px;
+      }
+      #startFramePicker .label { font-size: 13px; color: #aaa; margin-bottom: 6px; }
+      #startFrameGrid {
+        display: flex; flex-wrap: wrap; gap: 6px;
+      }
+      .sf-thumb {
+        width: 128px; height: 96px; object-fit: cover; border: 2px solid #333;
+        border-radius: 4px; cursor: pointer; opacity: 0.7; transition: all 0.15s;
+      }
+      .sf-thumb:hover { opacity: 1; border-color: #888; }
+      .sf-thumb.selected { opacity: 1; border-color: #c00; box-shadow: 0 0 8px rgba(204,0,0,0.5); }
+      .sf-random {
+        width: 128px; height: 96px; border: 2px dashed #555; border-radius: 4px;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        color: #888; font-size: 12px; text-align: center; opacity: 0.7; transition: all 0.15s;
+      }
+      .sf-random:hover { opacity: 1; border-color: #888; }
+      .sf-random.selected { opacity: 1; border-color: #c00; color: #c00; }
+    </style>
+  </head>
+  <body>
+    <div id="overlay">
+      <div>
+        <div class="spinner"></div>
+        <div id="statusText">Loading DOOM world model...</div>
+      </div>
+    </div>
+
+    <div id="app">
+      <h1>DOOM</h1>
+      <p style="color:#666; margin-top:0; font-size:13px;">Latent Diffusion World Model</p>
+
+      <div class="controls">
+        <label>FPS: <input type="number" id="fpsInput" value="20" min="1" step="1" />
+          <span style="color:#666; font-size:11px; margin-left:8px;">target fps</span></label>
+        <label>Steps: <input type="number" id="stepsInput" value="5" min="1" max="50" step="1" />
+          <span style="color:#666; font-size:11px; margin-left:8px;">diffusion steps (fewer = faster)</span></label>
+        <label>Mouse sens: <input type="number" id="sensInput" value="0.08" min="0.01" max="1.0" step="0.01" />
+          <span style="color:#666; font-size:11px; margin-left:8px;">turn per pixel</span></label>
+      </div>
+
+      <div id="startFramePicker" style="display:none;">
+        <div class="label">Start scene:</div>
+        <div id="startFrameGrid">
+          <div class="sf-random selected" id="sfRandom" title="Random start">Random</div>
+        </div>
+      </div>
+
+      <div>
+        <button id="startBtn" disabled>Start</button>
+        <button id="stopBtn" disabled>Stop</button>
+        <button id="resetBtn" disabled>Reset</button>
+      </div>
+
+      <div id="frameContainer">
+        <img id="frame" alt="DOOM frame" />
+        <div id="lockHint">Click to capture mouse</div>
+      </div>
+
+      <div class="hud">
+        <div>FPS: <span id="fpsValue">-</span> | Frame: <span id="frameValue">-</span></div>
+        <div>Input: <span id="inputValue" class="active">-</span></div>
+        <div>Action: <span id="actionValue">-</span></div>
+      </div>
+
+      <div class="key-guide">
+        <b>Controls:</b><br>
+        <b>W/A/S/D</b> - Move forward / strafe left / backward / strafe right<br>
+        <b>Mouse</b> - Look left / right (click game frame to capture mouse, Esc to release)<br>
+        <b>Left Click</b> or <b>Space</b> - Attack<br>
+        <b>Shift</b> - Sprint<br>
+        <b>1-7</b> - Select weapon<br>
+        <b>Arrow Left/Right</b> - Turn (keyboard fallback)<br>
+        All keys work simultaneously.
+      </div>
+    </div>
+
+    <script>
+      const socket = io({ transports: ['websocket', 'polling'] });
+
+      const overlay      = document.getElementById('overlay');
+      const statusText   = document.getElementById('statusText');
+      const startBtn     = document.getElementById('startBtn');
+      const stopBtn      = document.getElementById('stopBtn');
+      const resetBtn     = document.getElementById('resetBtn');
+      const frameImg     = document.getElementById('frame');
+      const frameContainer = document.getElementById('frameContainer');
+      const lockHint     = document.getElementById('lockHint');
+
+      const fpsValue     = document.getElementById('fpsValue');
+      const frameValue   = document.getElementById('frameValue');
+      const inputValue   = document.getElementById('inputValue');
+      const actionValue  = document.getElementById('actionValue');
+
+      // ---- Input state ----
+      let keyBitmask = 0;
+      let mouseTurnAccum = 0;  // accumulated mouse delta since last send
+      let streaming = false;
+      let pointerLocked = false;
+      let selectedStartFrame = -1;  // -1 = random
+      let uncondMode = false;  // toggle with 'u' key
+
+      // Arrow keys for keyboard turning
+      let arrowLeftHeld = false;
+      let arrowRightHeld = false;
+      const KEYBOARD_TURN_SPEED = 5.0;
+
+      // Key bitmask mapping (binary actions)
+      const KEY_BITS = {
+        'w': 0x0001, 'W': 0x0001,
+        's': 0x0002, 'S': 0x0002,
+        'a': 0x0004, 'A': 0x0004,
+        'd': 0x0008, 'D': 0x0008,
+        ' ': 0x0010,                         // Space = attack
+        'Shift': 0x0020,                     // Sprint
+        '1': 0x0040, '2': 0x0080, '3': 0x0100,
+        '4': 0x0200, '5': 0x0400, '6': 0x0800, '7': 0x1000,
+      };
+
+      const BIT_LABELS = [
+        [0x0001, 'Fwd'], [0x0002, 'Back'], [0x0004, 'Left'], [0x0008, 'Right'],
+        [0x0010, 'Atk'], [0x0020, 'Run'],
+        [0x0040, 'W1'], [0x0080, 'W2'], [0x0100, 'W3'], [0x0200, 'W4'],
+        [0x0400, 'W5'], [0x0800, 'W6'], [0x1000, 'W7'],
+      ];
+
+      function getSensitivity() {
+        return parseFloat(document.getElementById('sensInput').value) || 0.08;
+      }
+
+      function sendAction() {
+        if (!streaming) return;
+        // Add keyboard turn to mouse turn
+        let turn = mouseTurnAccum;
+        if (arrowLeftHeld) turn -= KEYBOARD_TURN_SPEED;
+        if (arrowRightHeld) turn += KEYBOARD_TURN_SPEED;
+        socket.emit('action', { keys: keyBitmask, turn: turn, uncond: uncondMode });
+        mouseTurnAccum = 0;  // reset after send
+      }
+
+      function updateInputDisplay() {
+        if (uncondMode) {
+          inputValue.textContent = 'Uncond';
+          return;
+        }
+        const parts = BIT_LABELS.filter(([bit]) => keyBitmask & bit).map(([, n]) => n);
+        if (arrowLeftHeld) parts.push('TurnL');
+        if (arrowRightHeld) parts.push('TurnR');
+        if (mouseTurnAccum !== 0) parts.push('Mouse');
+        inputValue.textContent = parts.length ? parts.join(' + ') : 'Idle';
+      }
+
+      // ---- Keyboard ----
+      document.addEventListener('keydown', (e) => {
+        // Toggle unconditional mode
+        if (e.key === 'u' || e.key === 'U') { uncondMode = !uncondMode; sendAction(); updateInputDisplay(); e.preventDefault(); return; }
+
+        // Arrow keys for turning
+        if (e.key === 'ArrowLeft') { arrowLeftHeld = true; sendAction(); updateInputDisplay(); e.preventDefault(); return; }
+        if (e.key === 'ArrowRight') { arrowRightHeld = true; sendAction(); updateInputDisplay(); e.preventDefault(); return; }
+
+        const bit = KEY_BITS[e.key];
+        if (bit !== undefined) {
+          e.preventDefault();
+          if (!(keyBitmask & bit)) {
+            keyBitmask |= bit;
+            sendAction();
+            updateInputDisplay();
+          }
+        }
+      });
+
+      document.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowLeft') { arrowLeftHeld = false; sendAction(); updateInputDisplay(); e.preventDefault(); return; }
+        if (e.key === 'ArrowRight') { arrowRightHeld = false; sendAction(); updateInputDisplay(); e.preventDefault(); return; }
+
+        const bit = KEY_BITS[e.key];
+        if (bit !== undefined) {
+          keyBitmask &= ~bit;
+          sendAction();
+          updateInputDisplay();
+          e.preventDefault();
+        }
+      });
+
+      // ---- Pointer Lock (mouse capture for turning) ----
+      frameContainer.addEventListener('click', () => {
+        if (!pointerLocked) {
+          frameContainer.requestPointerLock();
+        }
+      });
+
+      document.addEventListener('pointerlockchange', () => {
+        pointerLocked = (document.pointerLockElement === frameContainer);
+        lockHint.classList.toggle('hidden', pointerLocked);
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!pointerLocked) return;
+        const sens = getSensitivity();
+        mouseTurnAccum += e.movementX * sens;
+        sendAction();
+        updateInputDisplay();
+      });
+
+      // Mouse click = attack (only when pointer locked)
+      document.addEventListener('mousedown', (e) => {
+        if (!pointerLocked) return;
+        if (e.button === 0) {
+          keyBitmask |= 0x0010;  // attack bit
+          sendAction();
+          updateInputDisplay();
+        }
+      });
+      document.addEventListener('mouseup', (e) => {
+        if (e.button === 0) {
+          keyBitmask &= ~0x0010;
+          sendAction();
+          updateInputDisplay();
+        }
+      });
+
+      // ---- Status ----
+      function setStatus(isReady, isBusy) {
+        if (!isReady) {
+          overlay.classList.remove('hidden');
+          startBtn.disabled = stopBtn.disabled = resetBtn.disabled = true;
+          statusText.textContent = 'Loading DOOM world model...';
+        } else if (isBusy) {
+          overlay.classList.remove('hidden');
+          startBtn.disabled = stopBtn.disabled = resetBtn.disabled = true;
+          statusText.textContent = 'Server in use by another player.\nPlease wait...';
+        } else {
+          overlay.classList.add('hidden');
+          startBtn.disabled = false;
+          stopBtn.disabled = false;
+          resetBtn.disabled = false;
+        }
+      }
+      setStatus(false, false);
+
+      // ---- Start frame picker ----
+      function selectStartFrame(idx) {
+        selectedStartFrame = idx;
+        document.querySelectorAll('.sf-thumb, .sf-random').forEach(el => el.classList.remove('selected'));
+        if (idx < 0) {
+          document.getElementById('sfRandom').classList.add('selected');
+        } else {
+          const el = document.querySelector(`.sf-thumb[data-idx="${idx}"]`);
+          if (el) el.classList.add('selected');
+        }
+      }
+
+      function getStreamParams() {
+        return {
+          fps: parseInt(document.getElementById('fpsInput').value) || 20,
+          n_steps: parseInt(document.getElementById('stepsInput').value) || 5,
+          cfg: 1.0,
+          clamp: false,
+          start_frame: selectedStartFrame,
+        };
+      }
+
+      // ---- Socket events ----
+      socket.on('connect', () => console.log('connected'));
+      socket.on('server_status', (p) => setStatus(!!(p && p.ready), !!(p && p.busy)));
+
+      socket.on('start_frames', (frames) => {
+        const grid = document.getElementById('startFrameGrid');
+        const picker = document.getElementById('startFramePicker');
+        // Clear existing thumbnails (keep the random button)
+        grid.querySelectorAll('.sf-thumb').forEach(el => el.remove());
+        frames.forEach(({ idx, thumbnail }) => {
+          const img = document.createElement('img');
+          img.className = 'sf-thumb';
+          img.src = `data:image/jpeg;base64,${thumbnail}`;
+          img.dataset.idx = idx;
+          img.title = `Start scene ${idx}`;
+          img.addEventListener('click', () => selectStartFrame(idx));
+          grid.appendChild(img);
+        });
+        document.getElementById('sfRandom').addEventListener('click', () => selectStartFrame(-1));
+        picker.style.display = 'block';
+      });
+
+      startBtn.addEventListener('click', () => {
+        socket.emit('start_stream', getStreamParams());
+        streaming = true;
+      });
+
+      stopBtn.addEventListener('click', () => {
+        socket.emit('stop_stream');
+        streaming = false;
+      });
+
+      resetBtn.addEventListener('click', () => {
+        socket.emit('stop_stream');
+        streaming = false;
+        keyBitmask = 0;
+        mouseTurnAccum = 0;
+        arrowLeftHeld = false;
+        arrowRightHeld = false;
+        setTimeout(() => {
+          socket.emit('start_stream', getStreamParams());
+          streaming = true;
+        }, 200);
+      });
+
+      socket.on('frame', ({ frame, frame_index, action, fps }) => {
+        frameImg.src = `data:image/jpeg;base64,${frame}`;
+        frameValue.textContent = frame_index;
+        if (fps !== undefined) fpsValue.textContent = fps.toFixed(1);
+        actionValue.textContent = action || '-';
+      });
+
+      socket.on('error', (e) => console.warn('server error', e));
+      socket.on('stream_started', () => console.log('Stream started'));
+    </script>
+  </body>
+</html>
