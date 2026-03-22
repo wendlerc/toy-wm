@@ -35,6 +35,7 @@ class TrainingConfig:
     noclip : bool = False
     dtype : str = "bf16"
     action_dropout : float = 0.2
+    eval_each_n_steps : int = 500
 
 
 @dataclass

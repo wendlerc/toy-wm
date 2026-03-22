@@ -62,11 +62,13 @@ if __name__ == "__main__":
     checkpoint_manager = CheckpointManager(save_dir, k=5, mode="min", metric_name="loss")
     p_pretrain = ctrain.p_pretrain if "p_pretrain" in ctrain else 1.0
     action_dropout = ctrain.action_dropout if "action_dropout" in ctrain else 0.2
+    eval_each_n_steps = ctrain.eval_each_n_steps if "eval_each_n_steps" in ctrain else 500
     model = train(model, loader, pred2frame=pred2frame,
-                  lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas, 
+                  lr1=ctrain.lr1, lr2=ctrain.lr2, betas=ctrain.betas,
                   weight_decay=ctrain.weight_decay, max_steps=ctrain.max_steps,
                   clipping=not ctrain.noclip, checkpoint_manager=checkpoint_manager,
-                  warmup_steps=ctrain.warmup_steps, device=device, dtype=dtype, action_dropout=action_dropout)
+                  warmup_steps=ctrain.warmup_steps, device=device, dtype=dtype, action_dropout=action_dropout,
+                  eval_each_n_steps=eval_each_n_steps)
 
     # Save model
     t.save(model.state_dict(), os.path.join(save_dir, "model.pt"))
