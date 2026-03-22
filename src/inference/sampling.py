@@ -6,7 +6,7 @@ def sample(v, z, actions, num_steps=10, cfg=1.0, negative_actions=None, cache=No
 
 def sample_with_grad(v, z, actions, num_steps=10, cfg=1.0, negative_actions=None, cache=None):
     device = v.device
-    ts = 1 - t.linspace(0, 1, num_steps+1, device=device)
+    ts = 1 - t.linspace(0, 1, num_steps+1, device=device, dtype=v.dtype)
     ts = 3*ts/(2*ts + 1)
     z_prev = z.clone()
     z_prev = z_prev.to(device)

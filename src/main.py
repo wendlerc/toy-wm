@@ -53,7 +53,7 @@ if __name__ == "__main__":
 
     if not cmodel.nocompile:
         try:
-            model = t.compile(model)#, mode="max-autotune")
+            model = t.compile(model)
             print("Model compiled with torch.compile for acceleration.")
         except AttributeError:
             print("torch.compile is not available in this version of PyTorch; running without compilation.")

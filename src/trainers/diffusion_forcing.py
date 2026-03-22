@@ -129,7 +129,7 @@ def train(model, dataloader,
                         z = t.randn_like(eval_frames, device=device, dtype=dtype)
                         x0 = eval_frames
                         vel_true = x0 - z
-                        ts = noise_level * t.ones(eval_frames.shape[0], eval_frames.shape[1], device=device, dtype=dtype)
+                        ts = t.full((eval_frames.shape[0], eval_frames.shape[1]), noise_level, device=device, dtype=dtype)
                         x_t = x0 - ts[:, :, None, None, None] * vel_true
                         vel_pred, _, _ = eval_model(x_t, eval_actions, ts)
                         noise_losses.append(F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean"))
