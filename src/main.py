@@ -10,7 +10,8 @@ from .config import Config
 from .utils.checkpoint import CheckpointManager, load_model_from_config
 from .trainers.diffusion_forcing import train
 
-t.set_float32_matmul_precision("high")
+t.backends.cuda.matmul.fp32_precision = "tf32"
+t.backends.cudnn.conv.fp32_precision = "tf32"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

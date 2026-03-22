@@ -1,3 +1,4 @@
+import time
 import torch as t
 import torch._dynamo as _dynamo
 import torch.nn.functional as F
@@ -122,6 +123,7 @@ def train(model, dataloader,
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
             model.eval()
             t.cuda.empty_cache()
+            eval_t0 = time.time()
             # compute loss per noise level
             noise_levels = [1., 0.75, 0.5, 0.25, 0.1, 0]
             noise_losses = []
@@ -163,6 +165,7 @@ def train(model, dataloader,
                 gt_rgb = pred2frame(gt_clip)
                 sidebyside = t.cat([gt_rgb, pred_rgb], dim=-1)
                 log_dict["ar_vs_gt"] = log_video(sidebyside, fps=30)
+            print(f"  eval took {time.time() - eval_t0:.1f}s")
             # Offload VAE if using latent space (doom) to free VRAM
             if eval_model.in_channels != 3:
                 from ..datasets.doom_pvp import offload_vae
