@@ -1,3 +1,4 @@
+import warnings
 import torch as t
 import torch.nn.functional as F
 import wandb
@@ -118,6 +119,8 @@ def train(model, dataloader,
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
             model.eval()
             t.cuda.empty_cache()
+            # Suppress flex_attention warning during eval (unwrapped model runs in eager mode)
+            warnings.filterwarnings("ignore", message="flex_attention called without torch.compile")
             # compute loss per noise level
             noise_levels = [1., 0.75, 0.5, 0.25, 0.1, 0]
             noise_losses = []
