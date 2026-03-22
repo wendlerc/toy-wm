@@ -550,7 +550,7 @@ def handle_start_stream(data):
                 emit('error', {'message': 'Server busy with another user.'})
                 return
             active_user_sid = sid
-        n_steps = int(data.get('n_steps', 6))
+        n_steps = int(data.get('n_steps', 5))
         fps = max(1, int(data.get('fps', 30)))
         clamp = bool(data.get('clamp', False))
         start_frame_idx = int(data.get('start_frame', -1))

@@ -162,7 +162,7 @@ def _broadcast_ready():
 # --------------------------
 # Model init (pure eager) & warmup
 # --------------------------
-def initialize_model(config_path):
+def initialize_model(config_path, checkpoint_override=None):
     global model, device, cache
     global noise_buf, action_buf, step_once, server_ready
 
@@ -176,8 +176,8 @@ def initialize_model(config_path):
     # Optimize checkpoint loading: copy to local storage if on network mount
     t0 = time.time()
     cfg = Config.from_yaml(config_path)
-    checkpoint_path = cfg.model.checkpoint
-    
+    checkpoint_path = checkpoint_override or cfg.model.checkpoint
+
     model = load_model_from_config(config_path, checkpoint_path=checkpoint_path, strict=False)
     model.to(device)  # Move model to GPU before activating cache
     model.eval()
@@ -562,12 +562,14 @@ def handle_stop_stream():
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description="Pong backend server")
-    parser.add_argument('--config', type=str, default=os.path.join(project_root, "configs/pong_inference.yaml"),
-                        help="Path to inference config YAML (default: configs/pong_inference.yaml)")
+    parser.add_argument('--config', type=str,
+                        default=os.path.join(project_root, "configs/pong.yaml"))
     parser.add_argument('--port', type=int, default=5000)
+    parser.add_argument('--checkpoint', type=str, default=None,
+                        help="Override checkpoint path (directory or .pt file)")
     args = parser.parse_args()
 
-    initialize_model(args.config)
+    initialize_model(args.config, checkpoint_override=args.checkpoint)
 
     print(f"Starting Flask server on http://localhost:{args.port}")
     socketio.run(app, host='0.0.0.0', port=args.port, debug=False, allow_unsafe_werkzeug=True, use_reloader=False)
