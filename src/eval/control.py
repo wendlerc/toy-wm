@@ -1,4 +1,5 @@
 import torch as t
+import torch._dynamo as _dynamo
 import numpy as np
 import cv2
 
@@ -56,6 +57,7 @@ def annotate_frames(frames, annotations, action_emb=None):
     extended_frames_torch = t.from_numpy(extended_frames)
     return extended_frames_torch
 
+@_dynamo.disable
 def basic_control(model, pred2frame, n_steps=6):
     actions = model.action_emb.basic_control_actions
     pred = sample_video(model, actions, n_steps=n_steps)

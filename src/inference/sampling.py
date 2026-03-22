@@ -1,9 +1,11 @@
 import torch as t
+import torch._dynamo as _dynamo
 
 @t.no_grad()
 def sample(v, z, actions, num_steps=10, cfg=1.0, negative_actions=None, cache=None):
     return sample_with_grad(v, z, actions, num_steps, cfg, negative_actions, cache=cache)
 
+@_dynamo.disable
 def sample_with_grad(v, z, actions, num_steps=10, cfg=1.0, negative_actions=None, cache=None):
     device = v.device
     ts = 1 - t.linspace(0, 1, num_steps+1, device=device, dtype=v.dtype)
@@ -37,6 +39,7 @@ def sample_with_grad(v, z, actions, num_steps=10, cfg=1.0, negative_actions=None
 
     return z_prev
 
+@_dynamo.disable
 def sample_video(model, actions, n_steps=4, cfg=1.0, negative_actions=None, clamp=False, cache=None):
     batch_size = actions.shape[0]
     num_actions = actions.shape[1]

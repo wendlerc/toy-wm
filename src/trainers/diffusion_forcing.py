@@ -1,5 +1,5 @@
-import warnings
 import torch as t
+import torch._dynamo as _dynamo
 import torch.nn.functional as F
 import wandb
 from tqdm import tqdm
@@ -11,6 +11,7 @@ from ..utils import log_video, get_muon, lr_lambda
 
 
 @t.no_grad()
+@_dynamo.disable
 def _conditioned_ar_dit(model, first_frame, actions, n_steps=6, cfg=1.0):
     """Generate autoregressively from a real first frame with real actions (DiT)."""
     B = first_frame.shape[0]
@@ -55,6 +56,8 @@ def train(model, dataloader,
     eval_model = model
     for attr in ("_orig_mod",):
         eval_model = getattr(eval_model, attr, eval_model)
+
+    _dynamo.config.cache_size_limit = 128
 
     optimizer = get_muon(model, float(lr1), float(lr2), (float(betas[0]), float(betas[1])), float(weight_decay))
     scheduler = t.optim.lr_scheduler.LambdaLR(optimizer, partial(lr_lambda, max_steps=max_steps, warmup_steps=warmup_steps))
@@ -119,8 +122,6 @@ def train(model, dataloader,
             checkpoint_manager.save(metric=loss.item(), step=step, model=model, optimizer=optimizer, scheduler=scheduler)
             model.eval()
             t.cuda.empty_cache()
-            # Suppress flex_attention warning during eval (unwrapped model runs in eager mode)
-            warnings.filterwarnings("ignore", message="flex_attention called without torch.compile")
             # compute loss per noise level
             noise_levels = [1., 0.75, 0.5, 0.25, 0.1, 0]
             noise_losses = []
@@ -134,29 +135,29 @@ def train(model, dataloader,
                         vel_true = x0 - z
                         ts = t.full((eval_frames.shape[0], eval_frames.shape[1]), noise_level, device=device, dtype=dtype)
                         x_t = x0 - ts[:, :, None, None, None] * vel_true
-                        vel_pred, _, _ = eval_model(x_t, eval_actions, ts)
+                        vel_pred, _, _ = model(x_t, eval_actions, ts)
                         noise_losses.append(F.mse_loss(vel_pred.double(), vel_true.double(), reduction="mean"))
                         log_dict[f"noise:{noise_level}"] = noise_losses[-1].item()
 
             if frames.shape[1] == 1:
                 with t.autocast(device_type=device, dtype=dtype):
-                    z_sampled = sample(eval_model,
+                    z_sampled = sample(model,
                                     t.randn_like(frames[:30], device=device, dtype=dtype),
                                     actions[:30], num_steps=10)
                     z_sampled = z_sampled.permute(1, 0, 2, 3, 4)
             else:
                 with t.autocast(device_type=device, dtype=dtype):
-                    z_sampled = sample(eval_model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
+                    z_sampled = sample(model, t.randn_like(frames[:1], device=device, dtype=dtype), actions[:1], num_steps=10)
             frames_sampled = pred2frame(z_sampled)
             log_dict["sample"] = log_video(frames_sampled, fps=30)
-            frames_control = basic_control(eval_model, pred2frame)
+            frames_control = basic_control(model, pred2frame)
             log_dict["control"] = log_video(frames_control, fps=30)
             # AR-vs-GT comparison
             with t.no_grad():
                 gt_ctx = frames_clean[:1, :1]
                 gt_actions = actions_clean[:1, 1:eval_model.n_window]
                 n_ar = gt_actions.shape[1]
-                pred_ar = _conditioned_ar_dit(eval_model, gt_ctx, gt_actions, n_steps=6, cfg=1.0)
+                pred_ar = _conditioned_ar_dit(model, gt_ctx, gt_actions, n_steps=6, cfg=1.0)
                 gt_clip = frames_clean[:1, :n_ar+1]
                 pred_rgb = pred2frame(pred_ar)
                 gt_rgb = pred2frame(gt_clip)
