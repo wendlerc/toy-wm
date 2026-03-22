@@ -54,16 +54,14 @@ uv run scripts/download_doom_dataset.py --n-shards 1
 uv run scripts/download_doom_dataset.py --all
 ```
 
-If you download to a custom location, symlink it to the config's expected path:
-```bash
-mkdir -p datasets
-ln -s /tmp/doom_latents datasets/doom_latents
-```
+If you download to a custom location, pass `--shard-dir` to the training and play scripts.
 
 ### 2. Train
 
 ```bash
 uv run python -m src.main --config configs/doom_diffusion_forcing.yaml
+# or with a custom shard location:
+uv run python -m src.main --config configs/doom_diffusion_forcing.yaml --shard-dir /tmp/doom_latents
 ```
 
 The default config trains for 5000 steps with batch_size=64 in bf16. On an A6000 (48 GB), this takes ~2.5 hours at ~1.65s/step. Loss goes from ~5.4 to ~1.3. The first step is slow (~4 min) due to `torch.compile` graph capture.
@@ -74,6 +72,8 @@ Checkpoints are saved every 500 steps to `experiments/<wandb-run-name>/`. The fi
 
 ```bash
 uv run python play_doom.py --checkpoint experiments/<run-name>/model.pt
+# or with a custom shard location (used for start frame loading):
+uv run python play_doom.py --checkpoint experiments/<run-name>/model.pt --shard-dir /tmp/doom_latents
 ```
 
 The server starts at http://localhost:4444. Startup takes several minutes (model + VAE compilation, warmup, start frame loading). Controls: WASD to move, mouse to look, click to shoot (click the frame to capture the mouse, Esc to release). The DC-AE VAE decoder (~1 GB) is downloaded automatically on first use.

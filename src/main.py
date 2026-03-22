@@ -13,11 +13,15 @@ from .trainers.diffusion_forcing import train
 t.set_float32_matmul_precision("high")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()    
+    parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--shard-dir", type=str, default=None,
+                        help="Override dataset.shard_dir (path to doom latent shards)")
     args = parser.parse_args()
 
     cfg = Config.from_yaml(args.config)
+    if args.shard_dir is not None:
+        cfg.dataset.shard_dir = args.shard_dir
     cmodel = cfg.model
     ctrain = cfg.train
 
@@ -38,7 +42,7 @@ if __name__ == "__main__":
     else:
         device = "cpu"
 
-    loader, pred2frame = load_loader_and_pred2frame_from_config(args.config)
+    loader, pred2frame = load_loader_and_pred2frame_from_config(cfg)
     frames, actions = next(iter(loader))
     model = load_model_from_config(args.config)
 

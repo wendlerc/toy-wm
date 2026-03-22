@@ -249,7 +249,7 @@ def _reset_cache():
 def _broadcast_ready():
     socketio.emit('server_status', {'ready': server_ready})
 
-def initialize_model(config_path, checkpoint_override=None):
+def initialize_model(config_path, checkpoint_override=None, shard_dir_override=None):
     global model, device, cache, vae, vae_decode_compiled
     global noise_buf, action_buf, step_once, seed_cache_fn, server_ready
 
@@ -357,7 +357,7 @@ def initialize_model(config_path, checkpoint_override=None):
 
     # Load start frames from dataset
     print("  Loading start frames from dataset...")
-    shard_dir = getattr(cfg.dataset, "shard_dir", None) or "./datasets/doom_latents"
+    shard_dir = shard_dir_override or getattr(cfg.dataset, "shard_dir", None) or "./datasets/doom_latents"
     _load_start_frames(cmodel.n_window, shard_dir=shard_dir)
     t.cuda.synchronize()
 
@@ -596,9 +596,12 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=4444)
     parser.add_argument('--checkpoint', type=str, default=None,
                         help="Override checkpoint path (directory or .pt file)")
+    parser.add_argument('--shard-dir', type=str, default=None,
+                        help="Override dataset shard directory for start frame loading")
     args = parser.parse_args()
 
-    initialize_model(args.config, checkpoint_override=args.checkpoint)
+    initialize_model(args.config, checkpoint_override=args.checkpoint,
+                     shard_dir_override=args.shard_dir)
     print(f"Starting server on http://localhost:{args.port}")
     socketio.run(app, host='0.0.0.0', port=args.port, debug=False,
                  allow_unsafe_werkzeug=True, use_reloader=False)

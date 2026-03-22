@@ -3,9 +3,12 @@ from . import doom_pvp
 from . import pong1m
 
 
-def load_loader_and_pred2frame_from_config(config_path: str):
-    print(f"loading {config_path}")
-    cfg = Config.from_yaml(config_path)
+def load_loader_and_pred2frame_from_config(config_path_or_cfg):
+    if isinstance(config_path_or_cfg, str):
+        print(f"loading {config_path_or_cfg}")
+        cfg = Config.from_yaml(config_path_or_cfg)
+    else:
+        cfg = config_path_or_cfg
     c = cfg.dataset
     pad_height = cfg.model.patch_size > 1  # only pad when patch_size requires even height
     if c.dataset_id == "doom1p":
