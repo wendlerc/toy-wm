@@ -34,7 +34,7 @@ The folder structure and repo are hopefully self explanatory. If you have any qu
 ## Pong
 
 - download pong dataset `uv run scripts/download_dataset.py`
-- train a pong simulator (should take <= 30 minutes on a A6000): `uv run python -m src.main`. The first few training steps are slow due to `torch.compile` graph capture.
+- train a pong simulator (should take <= 30 minutes on a A6000): `uv run python -m src.main --config configs/pong.yaml`. The first few training steps are slow due to `torch.compile` graph capture.
 - to use it update `configs/inference.yaml`. By default, the checkpoints will be in `./experiments/wandb-run-name`. If you want to play with your model while it is training you can put the run folder into the checkpoint field. Then run `uv run python play_pong.py`. This should start a server running pong that you can connect to and play interactively. There is also `generate_with_cache.ipynb` to play around with inference.
 
 ## Doom (latent diffusion)
@@ -59,9 +59,9 @@ If you download to a custom location, pass `--shard-dir` to the training and pla
 ### 2. Train
 
 ```bash
-uv run python -m src.main --config configs/doom_diffusion_forcing.yaml
+uv run python -m src.main --config configs/doom.yaml
 # or with a custom shard location:
-uv run python -m src.main --config configs/doom_diffusion_forcing.yaml --shard-dir /tmp/doom_latents
+uv run python -m src.main --config configs/doom.yaml --shard-dir /tmp/doom_latents
 ```
 
 The default config trains for 5000 steps with batch_size=64 in bf16. On an A6000 (48 GB), this takes ~2.5 hours at ~1.65s/step. Loss goes from ~5.4 to ~1.3. The first step is slow (~4 min) due to `torch.compile` graph capture.

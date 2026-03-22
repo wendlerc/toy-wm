@@ -85,7 +85,7 @@ def main():
 
     n_shards = len(list(output_dir.glob("latent-*.tar")))
     print(f"\nDone! {n_shards} shard(s) in {output_dir.absolute()}")
-    print(f"To train: uv run python -m src.main --config configs/doom_diffusion_forcing.yaml")
+    print(f"To train: uv run python -m src.main --config configs/doom.yaml")
 
 
 if __name__ == "__main__":

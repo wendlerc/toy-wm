@@ -15,7 +15,7 @@ t.backends.cudnn.conv.fp32_precision = "tf32"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default="configs/default.yaml")
+    parser.add_argument("--config", type=str, default="configs/pong.yaml")
     parser.add_argument("--shard-dir", type=str, default=None,
                         help="Override dataset.shard_dir (path to doom latent shards)")
     args = parser.parse_args()

@@ -8,7 +8,7 @@ via SocketIO with simultaneous keys (bitmask protocol).
 Usage:
     uv run python play_doom.py
     uv run python play_doom.py --checkpoint experiments/doom-run/model.pt
-    uv run python play_doom.py --config configs/doom_diffusion_forcing.yaml --port 4444
+    uv run python play_doom.py --config configs/doom.yaml --port 4444
 """
 
 # Eventlet must be imported first and monkey-patched before other imports
@@ -592,7 +592,7 @@ def handle_stop_stream():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Interactive Doom inference server")
     parser.add_argument('--config', type=str,
-                        default=os.path.join(project_root, "configs/doom_diffusion_forcing.yaml"))
+                        default=os.path.join(project_root, "configs/doom.yaml"))
     parser.add_argument('--port', type=int, default=4444)
     parser.add_argument('--checkpoint', type=str, default=None,
                         help="Override checkpoint path (directory or .pt file)")
